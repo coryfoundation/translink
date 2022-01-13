@@ -6,7 +6,7 @@ All messages are encrypted with **end-to-end encryption**. (more: http://hyperco
 Using **[`Hyperswarm`](https://github.com/hyperswarm/hyperswarm)**
 ## Installation
 ```
-npm install translink
+npm install @coryfoundation/translink
 ```
 
 ## Usage
