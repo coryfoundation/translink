@@ -15,9 +15,9 @@ npm install translink
 import Translink from 'translink'
 const bridge = new Translink({ namespace: 'my-simple-namespace' })
 
-bridge.connect().then(() => {
-  // Subscribes, events, gets, ...
-})
+// Subscribes, events, gets, ...
+
+await bridge.connect()
 
 ```
 
