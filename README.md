@@ -54,7 +54,5 @@ bridge.get('my.request', { something: 'data' })
 ## Replic nodes
 You can duplicate nodes with the same subscriptions an infinite number of times. Translink will send a message to a random available node.
 
-(the main thing is that the namespace and the route index in the subscription name match (**my**.event))
-
 ## License
 MIT
