@@ -12,7 +12,7 @@ npm install @coryfoundation/translink
 ## Usage
 **Join to network**
 ```js
-import Translink from 'translink'
+import Translink from '@coryfoundation/translink'
 const bridge = new Translink({ namespace: 'my-simple-namespace' })
 
 // Subscriptions, events, gets, ...
