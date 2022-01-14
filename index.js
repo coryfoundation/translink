@@ -146,19 +146,16 @@ var Translink = /** @class */ (function () {
             if (!nodeCell)
                 return;
             data.push(node.userData);
-            var success = this.eventEmitter.emit(eventName, data[1]);
+            var success = this.eventEmitter.emit(eventName, data);
             if (!success)
                 return;
         }
     };
     Translink.prototype.emit = function (eventId, data) {
-        var _a;
         var node = this._findAvailableNode(eventId);
         if (!node)
             throw "Event " + eventId + " not exist in network";
-        node[1].node.write(this._prepareOutgoingData([eventId, data]));
-        if (this.opts.log)
-            (_a = this.opts.logger) === null || _a === void 0 ? void 0 : _a.info("Event " + eventId + " emitted with data", data);
+        node === null || node === void 0 ? void 0 : node.node.write(this._prepareOutgoingData([eventId, data]));
         return true;
     };
     Translink.prototype.get = function (eventId, data) {
@@ -167,7 +164,6 @@ var Translink = /** @class */ (function () {
             return __generator(this, function (_a) {
                 // Trying to find node with this event
                 return [2 /*return*/, new Promise(function (resolve, reject) {
-                        var _a;
                         try {
                             var node = _this._findAvailableNode(eventId);
                             if (!node)
@@ -180,9 +176,7 @@ var Translink = /** @class */ (function () {
                                 else
                                     reject(data);
                             });
-                            node[1].node.write(_this._prepareOutgoingData([eventId, data, reqId]));
-                            if (_this.opts.log)
-                                (_a = _this.opts.logger) === null || _a === void 0 ? void 0 : _a.info("Event " + eventId + " getted with data", data);
+                            node === null || node === void 0 ? void 0 : node.node.write(_this._prepareOutgoingData([eventId, data, reqId]));
                         }
                         catch (err) {
                             reject(err);
@@ -218,7 +212,7 @@ var Translink = /** @class */ (function () {
             : data;
     };
     Translink.prototype._findAvailableNode = function (eventId) {
-        var nodes = __spreadArray([], __read(this.nodes.entries())).filter(function (cell) { return cell[1].listenerNames.indexOf(eventId) !== -1; });
+        var nodes = Array.from(this.nodes.values()).filter(function (cell) { return cell.listenerNames.indexOf(eventId) !== -1; });
         return nodes[Math.floor(Math.random() * nodes.length)];
     };
     Translink.prototype._bindReqResult = function (listener, data) {
@@ -227,10 +221,7 @@ var Translink = /** @class */ (function () {
         var nodeID = data[3];
         var node = this.nodes.get(nodeID);
         listener(data[1], data[3])
-            .then(function (result) {
-            var _a;
-            (_a = node === null || node === void 0 ? void 0 : node.node) === null || _a === void 0 ? void 0 : _a.write(_this._prepareOutgoingData([":res", result, reqId]));
-        })["catch"](function (err) {
+            .then(function (result) { var _a; return (_a = node === null || node === void 0 ? void 0 : node.node) === null || _a === void 0 ? void 0 : _a.write(_this._prepareOutgoingData([":res", result, reqId])); })["catch"](function (err) {
             var _a, _b;
             (_a = node === null || node === void 0 ? void 0 : node.node) === null || _a === void 0 ? void 0 : _a.write(_this._prepareOutgoingData([":err", (_b = err.stack) !== null && _b !== void 0 ? _b : err, reqId]));
         });

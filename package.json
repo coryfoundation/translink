@@ -1,13 +1,15 @@
 {
   "name": "@coryfoundation/translink",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Link your nodes simple without the need for queues and intermediate servers!",
   "main": "index.js",
   "dependencies": {
     "hyperswarm": "^3.0.1"
   },
   "devDependencies": {},
-  "scripts": {},
+  "scripts": {
+    "build": "tsc --esModuleInterop --downlevelIteration index.ts"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/coryfoundation/translink.git"

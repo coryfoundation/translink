@@ -80,10 +80,7 @@ export default class Translink {
     this.processMessageEvent(preparedData, node);
   }
 
-  private processMessageEvent(
-    data: Array<string | string[]>,
-    node: NoiseSecretStream
-  ) {
+  private processMessageEvent(data: Array<any>, node: NoiseSecretStream) {
     const eventName = String(data[0]);
 
     //Informing about the connection
@@ -96,32 +93,15 @@ export default class Translink {
         this.opts.logger?.info("Translink :: Node", node.userData, "connected");
     } else if (eventName === ":res") {
       this.respondEmitter.emit(String(data[2]), data[1]);
-      if (this.opts.log)
-        this.opts.logger?.info(
-          "Translink :: Request " + data[2] + " responded with data",
-          data[1]
-        );
     } else if (eventName === ":err") {
       this.respondEmitter.emit(String(data[2]), data[1], true);
-      if (this.opts.log)
-        this.opts.logger?.error(
-          "Translink :: Request " + data[2] + " responded with error",
-          data[1],
-          data
-        );
     } else {
       const nodeCell = this.nodes.get(node.userData);
       if (!nodeCell) return;
 
       data.push(node.userData);
 
-      if (this.opts.log)
-        this.opts.logger?.error(
-          "Translink :: Event " + data[2] + " recognized",
-          data
-        );
-
-      const success = this.eventEmitter.emit(eventName, data[1]);
+      const success = this.eventEmitter.emit(eventName, data);
       if (!success) return;
     }
   }
@@ -129,9 +109,7 @@ export default class Translink {
   public emit(eventId: string, data: DataType) {
     const node = this._findAvailableNode(eventId);
     if (!node) throw "Event " + eventId + " not exist in network";
-    node[1].node.write(this._prepareOutgoingData([eventId, data]));
-    if (this.opts.log)
-      this.opts.logger?.info("Event " + eventId + " emitted with data", data);
+    node?.node.write(this._prepareOutgoingData([eventId, data]));
     return true;
   }
 
@@ -151,13 +129,7 @@ export default class Translink {
           }
         );
 
-        node[1].node.write(this._prepareOutgoingData([eventId, data, reqId]));
-
-        if (this.opts.log)
-          this.opts.logger?.info(
-            "Event " + eventId + " getted with data",
-            data
-          );
+        node?.node.write(this._prepareOutgoingData([eventId, data, reqId]));
       } catch (err) {
         reject(err);
       }
@@ -194,8 +166,8 @@ export default class Translink {
   }
 
   private _findAvailableNode(eventId: string) {
-    const nodes = [...this.nodes.entries()].filter(
-      (cell) => cell[1].listenerNames.indexOf(eventId) !== -1
+    const nodes = Array.from(this.nodes.values()).filter(
+      (cell) => cell.listenerNames.indexOf(eventId) !== -1
     );
     return nodes[Math.floor(Math.random() * nodes.length)];
   }
@@ -205,18 +177,10 @@ export default class Translink {
     const nodeID = data[3];
     const node = this.nodes.get(nodeID);
 
-    if (this.opts.log)
-      this.opts.logger?.error("Translink :: _bindReqResult", data);
-
     listener(data[1], data[3])
-      .then((result: DataType) => {
-        if (this.opts.log)
-          this.opts.logger?.error(
-            "Translink :: Request " + reqId + " result",
-            result
-          );
-        node?.node?.write(this._prepareOutgoingData([":res", result, reqId]));
-      })
+      .then((result: DataType) =>
+        node?.node?.write(this._prepareOutgoingData([":res", result, reqId]))
+      )
       .catch((err: Error) => {
         node?.node?.write(
           this._prepareOutgoingData([":err", err.stack ?? err, reqId])
