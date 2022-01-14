@@ -186,7 +186,7 @@ var Translink = /** @class */ (function () {
         });
     };
     Translink.prototype.subscribe = function (eventId, listener) {
-        this.eventEmitter.on(eventId, listener);
+        this.eventEmitter.on(eventId, function (data) { return listener(data[1]); });
     };
     Translink.prototype.subscribeReq = function (eventId, listener) {
         var _this = this;
