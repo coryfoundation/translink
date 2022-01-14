@@ -137,7 +137,7 @@ export default class Translink {
   }
 
   public subscribe(eventId: string, listener: (...args: any[]) => any) {
-    this.eventEmitter.on(eventId, listener);
+    this.eventEmitter.on(eventId, (data: any) => listener(data[1]));
   }
 
   public subscribeReq(eventId: string, listener: (...args: any[]) => any) {
