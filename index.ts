@@ -96,13 +96,30 @@ export default class Translink {
         this.opts.logger?.info("Translink :: Node", node.userData, "connected");
     } else if (eventName === ":res") {
       this.respondEmitter.emit(String(data[2]), data[1]);
+      if (this.opts.log)
+        this.opts.logger?.info(
+          "Translink :: Request " + data[2] + " responded with data",
+          data[1]
+        );
     } else if (eventName === ":err") {
       this.respondEmitter.emit(String(data[2]), data[1], true);
+      if (this.opts.log)
+        this.opts.logger?.error(
+          "Translink :: Request " + data[2] + " responded with error",
+          data[1],
+          data
+        );
     } else {
       const nodeCell = this.nodes.get(node.userData);
       if (!nodeCell) return;
 
       data.push(node.userData);
+
+      if (this.opts.log)
+        this.opts.logger?.error(
+          "Translink :: Event " + data[2] + " recognized",
+          data
+        );
 
       const success = this.eventEmitter.emit(eventName, data[1]);
       if (!success) return;
@@ -188,8 +205,16 @@ export default class Translink {
     const nodeID = data[3];
     const node = this.nodes.get(nodeID);
 
+    if (this.opts.log)
+      this.opts.logger?.error("Translink :: _bindReqResult", data);
+
     listener(data[1], data[3])
       .then((result: DataType) => {
+        if (this.opts.log)
+          this.opts.logger?.error(
+            "Translink :: Request " + reqId + " result",
+            result
+          );
         node?.node?.write(this._prepareOutgoingData([":res", result, reqId]));
       })
       .catch((err: Error) => {

@@ -2,7 +2,7 @@
   "name": "@coryfoundation/translink",
   "version": "1.0.0",
   "description": "Link your nodes simple without the need for queues and intermediate servers!",
-  "main": "index.ts",
+  "main": "index.js",
   "dependencies": {
     "hyperswarm": "^3.0.1"
   },
