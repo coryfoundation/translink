@@ -85,6 +85,8 @@ export default class Translink {
   private processMessageEvent(data: Array<any>, node: NoiseSecretStream) {
     const eventName = String(data[0]);
 
+    if (this.opts.log) this.opts.logger?.info("Getted event " + eventName);
+
     //Informing about the connection
     if (eventName === ":peer") {
       // Set node id
@@ -92,19 +94,50 @@ export default class Translink {
       this.nodes.set(node.userData, { listenerNames: [...data[2]], node });
       // Inform to console
       if (this.opts.log)
-        this.opts.logger?.info("Translink :: Node", node.userData, "connected");
+        this.opts.logger?.info(
+          "Translink :: Node",
+          node.userData,
+          "connected with listeners " + JSON.stringify(data[2] ?? [])
+        );
     } else if (eventName === ":res") {
+      if (this.opts.log)
+        this.opts.logger?.info(
+          "Translink :: Result got for request",
+          String(data[2]),
+          " from node " + node.userData
+        );
       this.respondEmitter.emit(String(data[2]), data[1]);
     } else if (eventName === ":err") {
+      if (this.opts.log)
+        this.opts.logger?.info(
+          "Translink :: Error result getted for request",
+          String(data[2]),
+          " from node " + node.userData
+        );
       this.respondEmitter.emit(String(data[2]), data[1], true);
     } else {
       const nodeCell = this.nodes.get(node.userData);
-      if (!nodeCell) return;
+      if (!nodeCell) {
+        if (this.opts.log)
+          this.opts.logger?.log(
+            "Node's " + node.userData + " cell not found. Skip"
+          );
+        return;
+      }
 
       data.push(node.userData);
 
+      if (this.opts.log) this.opts.logger?.info("Executing event " + eventName);
+
       const success = this.eventEmitter.emit(eventName, data);
-      if (!success) return;
+      if (!success) {
+        if (this.opts.log) {
+          this.opts.logger?.log(
+            "Event's " + eventName + " handler response is not success. Skip"
+          );
+          return;
+        }
+      }
     }
   }
 
@@ -115,7 +148,7 @@ export default class Translink {
     return true;
   }
 
-  public async get(eventId: string, data: DataType) {
+  public async get(eventId: string, data: DataType): Promise<any> {
     // Trying to find node with this event
     return new Promise((resolve, reject) => {
       try {
@@ -137,6 +170,16 @@ export default class Translink {
             else reject(data);
           }
         );
+
+        if (this.opts.log)
+          this.opts.logger?.info(
+            "Request " +
+              eventId +
+              " with id " +
+              reqId +
+              " sent to node " +
+              node.node.userData
+          );
 
         node?.node.write(this._prepareOutgoingData([eventId, data, reqId]));
       } catch (err) {
@@ -186,10 +229,27 @@ export default class Translink {
     const nodeID = data[3];
     const node = this.nodes.get(nodeID);
 
+    if (this.opts.log)
+      this.opts.logger?.log(
+        "Request received " +
+          reqId +
+          " from node " +
+          nodeID +
+          ". Executing handler"
+      );
+
     listener(data[1], data[3])
-      .then((result: DataType) =>
-        node?.node?.write(this._prepareOutgoingData([":res", result, reqId]))
-      )
+      .then((result: DataType) => {
+        if (this.opts.log)
+          this.opts.logger?.log(
+            "Result received from handler for request " +
+              reqId +
+              " and node " +
+              nodeID +
+              ". Return result"
+          );
+        node?.node?.write(this._prepareOutgoingData([":res", result, reqId]));
+      })
       .catch((err: Error) => {
         node?.node?.write(
           this._prepareOutgoingData([":err", err.stack ?? err, reqId])
