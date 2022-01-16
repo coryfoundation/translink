@@ -15,6 +15,8 @@ declare interface Opts {
   logger?: Console;
   encoding?: string;
   requestTimeout?: number;
+  heartbeatInterval?: number;
+  heartbeatTimeout?: number;
 }
 
 declare type DataType = any[] | object | string | Buffer;
@@ -24,11 +26,12 @@ export default class Translink {
   private client: Hyperswarm | null = null;
   private net: PeerDiscovery | null = null;
   private nodeID: string | null = null;
+  private heartbeatTimer: NodeJS.Timer | null = null;
   private eventEmitter = new EventEmitter();
   private respondEmitter = new EventEmitter();
   private nodes: Map<
     string,
-    { listenerNames: string[]; node: NoiseSecretStream }
+    { listenerNames: string[]; heartbeat: number; node: NoiseSecretStream }
   > = new Map();
 
   constructor(opts: Opts) {
@@ -41,6 +44,13 @@ export default class Translink {
     if (!this.opts.logger) this.opts.logger = console;
     if (!this.opts.encoding) this.opts.encoding = "utf8";
     if (!this.opts.requestTimeout) this.opts.requestTimeout = 10 * 1000;
+    if (!this.opts.heartbeatInterval) this.opts.heartbeatInterval = 5 * 1000;
+    if (!this.opts.heartbeatTimeout) this.opts.heartbeatTimeout = 10 * 1000;
+
+    this.heartbeatTimer = setInterval(
+      () => this.heartbeatCheck(),
+      this.opts.heartbeatInterval
+    );
   }
 
   public async connect() {
@@ -91,7 +101,11 @@ export default class Translink {
     if (eventName === ":peer") {
       // Set node id
       node.userData = String(data[1]);
-      this.nodes.set(node.userData, { listenerNames: [...data[2]], node });
+      this.nodes.set(node.userData, {
+        listenerNames: [...data[2]],
+        node,
+        heartbeat: Date.now(),
+      });
       // Inform to console
       if (this.opts.log)
         this.opts.logger?.info(
@@ -115,6 +129,12 @@ export default class Translink {
           " from node " + node.userData
         );
       this.respondEmitter.emit(String(data[2]), data[1], true);
+    } else if (eventName === ":hb") {
+      const $node = this.nodes.get(node.userData);
+      if (!$node) return;
+
+      $node.heartbeat = Date.now();
+      this.nodes.set(node.userData, $node);
     } else {
       const nodeCell = this.nodes.get(node.userData);
       if (!nodeCell) {
@@ -139,6 +159,24 @@ export default class Translink {
         }
       }
     }
+  }
+
+  private heartbeatCheck() {
+    this.nodes.forEach((node, key) => {
+      if (Date.now() - node.heartbeat > this.opts.heartbeatTimeout) {
+        if (this.opts.log) {
+          this.opts.logger?.log(
+            "Heartbeat timeout for node " +
+              node.node.userData +
+              ". Remove from nodes list"
+          );
+
+          this.nodes.delete(key);
+        }
+      } else {
+        node.node.write(this._prepareOutgoingData([":hb"]));
+      }
+    });
   }
 
   public emit(eventId: string, data: DataType) {

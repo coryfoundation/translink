@@ -67,10 +67,12 @@ var hyperswarm_1 = __importDefault(require("hyperswarm"));
 var events_1 = __importDefault(require("events"));
 var Translink = /** @class */ (function () {
     function Translink(opts) {
+        var _this = this;
         var _a;
         this.client = null;
         this.net = null;
         this.nodeID = null;
+        this.heartbeatTimer = null;
         this.eventEmitter = new events_1["default"]();
         this.respondEmitter = new events_1["default"]();
         this.nodes = new Map();
@@ -85,6 +87,11 @@ var Translink = /** @class */ (function () {
             this.opts.encoding = "utf8";
         if (!this.opts.requestTimeout)
             this.opts.requestTimeout = 10 * 1000;
+        if (!this.opts.heartbeatInterval)
+            this.opts.heartbeatInterval = 5 * 1000;
+        if (!this.opts.heartbeatTimeout)
+            this.opts.heartbeatTimeout = 10 * 1000;
+        this.heartbeatTimer = setInterval(function () { return _this.heartbeatCheck(); }, this.opts.heartbeatInterval);
     }
     Translink.prototype.connect = function () {
         var _a, _b, _c, _d, _e;
@@ -134,7 +141,11 @@ var Translink = /** @class */ (function () {
         if (eventName === ":peer") {
             // Set node id
             node.userData = String(data[1]);
-            this.nodes.set(node.userData, { listenerNames: __spreadArray([], __read(data[2])), node: node });
+            this.nodes.set(node.userData, {
+                listenerNames: __spreadArray([], __read(data[2])),
+                node: node,
+                heartbeat: Date.now()
+            });
             // Inform to console
             if (this.opts.log)
                 (_b = this.opts.logger) === null || _b === void 0 ? void 0 : _b.info("Translink :: Node", node.userData, "connected with listeners " + JSON.stringify((_c = data[2]) !== null && _c !== void 0 ? _c : []));
@@ -148,6 +159,13 @@ var Translink = /** @class */ (function () {
             if (this.opts.log)
                 (_e = this.opts.logger) === null || _e === void 0 ? void 0 : _e.info("Translink :: Error result getted for request", String(data[2]), " from node " + node.userData);
             this.respondEmitter.emit(String(data[2]), data[1], true);
+        }
+        else if (eventName === ":hb") {
+            var $node = this.nodes.get(node.userData);
+            if (!$node)
+                return;
+            $node.heartbeat = Date.now();
+            this.nodes.set(node.userData, $node);
         }
         else {
             var nodeCell = this.nodes.get(node.userData);
@@ -167,6 +185,23 @@ var Translink = /** @class */ (function () {
                 }
             }
         }
+    };
+    Translink.prototype.heartbeatCheck = function () {
+        var _this = this;
+        this.nodes.forEach(function (node, key) {
+            var _a;
+            if (Date.now() - node.heartbeat > _this.opts.heartbeatTimeout) {
+                if (_this.opts.log) {
+                    (_a = _this.opts.logger) === null || _a === void 0 ? void 0 : _a.log("Heartbeat timeout for node " +
+                        node.node.userData +
+                        ". Remove from nodes list");
+                    _this.nodes["delete"](key);
+                }
+            }
+            else {
+                node.node.write(_this._prepareOutgoingData([":hb"]));
+            }
+        });
     };
     Translink.prototype.emit = function (eventId, data) {
         var node = this._findAvailableNode(eventId);
