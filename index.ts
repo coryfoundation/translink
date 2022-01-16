@@ -66,13 +66,15 @@ export default class Translink {
       { server: true, client: true }
     );
 
-    if (this.opts.log)
+    if (this.opts.log) {
       this.opts?.logger?.info("Translink :: Waiting to announcing...");
+    }
 
     await this.net?.flushed();
 
-    if (this.opts.log)
+    if (this.opts.log) {
       this.opts?.logger?.info("Translink :: Joined to network.");
+    }
   }
 
   private onConnection(node: NoiseSecretStream) {
@@ -95,7 +97,9 @@ export default class Translink {
   private processMessageEvent(data: Array<any>, node: NoiseSecretStream) {
     const eventName = String(data[0]);
 
-    if (this.opts.log) this.opts.logger?.info("Getted event " + eventName);
+    if (this.opts.log) {
+      this.opts.logger?.info("Getted event " + eventName);
+    }
 
     //Informing about the connection
     if (eventName === ":peer") {
@@ -107,27 +111,32 @@ export default class Translink {
         heartbeat: Date.now(),
       });
       // Inform to console
-      if (this.opts.log)
+      if (this.opts.log) {
         this.opts.logger?.info(
           "Translink :: Node",
           node.userData,
           "connected with listeners " + JSON.stringify(data[2] ?? [])
         );
+      }
     } else if (eventName === ":res") {
-      if (this.opts.log)
+      if (this.opts.log) {
         this.opts.logger?.info(
           "Translink :: Result got for request",
           String(data[2]),
           " from node " + node.userData
         );
+      }
+
       this.respondEmitter.emit(String(data[2]), data[1]);
     } else if (eventName === ":err") {
-      if (this.opts.log)
+      if (this.opts.log) {
         this.opts.logger?.info(
           "Translink :: Error result getted for request",
           String(data[2]),
           " from node " + node.userData
         );
+      }
+
       this.respondEmitter.emit(String(data[2]), data[1], true);
     } else if (eventName === ":hb") {
       const $node = this.nodes.get(node.userData);
@@ -138,16 +147,20 @@ export default class Translink {
     } else {
       const nodeCell = this.nodes.get(node.userData);
       if (!nodeCell) {
-        if (this.opts.log)
+        if (this.opts.log) {
           this.opts.logger?.log(
             "Node's " + node.userData + " cell not found. Skip"
           );
+        }
+
         return;
       }
 
       data.push(node.userData);
 
-      if (this.opts.log) this.opts.logger?.info("Executing event " + eventName);
+      if (this.opts.log) {
+        this.opts.logger?.info("Executing event " + eventName);
+      }
 
       const success = this.eventEmitter.emit(eventName, data);
       if (!success) {
@@ -155,6 +168,7 @@ export default class Translink {
           this.opts.logger?.log(
             "Event's " + eventName + " handler response is not success. Skip"
           );
+
           return;
         }
       }
@@ -170,9 +184,9 @@ export default class Translink {
               node.node.userData +
               ". Remove from nodes list"
           );
-
-          this.nodes.delete(key);
         }
+
+        this.nodes.delete(key);
       } else {
         node.node.write(this._prepareOutgoingData([":hb"]));
       }
@@ -209,7 +223,7 @@ export default class Translink {
           }
         );
 
-        if (this.opts.log)
+        if (this.opts.log) {
           this.opts.logger?.info(
             "Request " +
               eventId +
@@ -218,6 +232,7 @@ export default class Translink {
               " sent to node " +
               node.node.userData
           );
+        }
 
         node?.node.write(this._prepareOutgoingData([eventId, data, reqId]));
       } catch (err) {
@@ -267,7 +282,7 @@ export default class Translink {
     const nodeID = data[3];
     const node = this.nodes.get(nodeID);
 
-    if (this.opts.log)
+    if (this.opts.log) {
       this.opts.logger?.log(
         "Request received " +
           reqId +
@@ -275,10 +290,11 @@ export default class Translink {
           nodeID +
           ". Executing handler"
       );
+    }
 
     listener(data[1], data[3])
       .then((result: DataType) => {
-        if (this.opts.log)
+        if (this.opts.log) {
           this.opts.logger?.log(
             "Result received from handler for request " +
               reqId +
@@ -286,6 +302,8 @@ export default class Translink {
               nodeID +
               ". Return result"
           );
+        }
+
         node?.node?.write(this._prepareOutgoingData([":res", result, reqId]));
       })
       .catch((err: Error) => {
