@@ -14,6 +14,7 @@ declare interface Opts {
   log?: boolean;
   logger?: Console;
   encoding?: string;
+  requestTimeout?: number;
 }
 
 declare type DataType = any[] | object | string | Buffer;
@@ -39,6 +40,7 @@ export default class Translink {
       throw new Error("Namespace has not been set in options!");
     if (!this.opts.logger) this.opts.logger = console;
     if (!this.opts.encoding) this.opts.encoding = "utf8";
+    if (!this.opts.requestTimeout) this.opts.requestTimeout = 10 * 1000;
   }
 
   public async connect() {
@@ -120,10 +122,17 @@ export default class Translink {
         const node = this._findAvailableNode(eventId);
         if (!node) throw "Event " + eventId + " not exist in network";
 
+        const timer = setTimeout(
+          () =>
+            this.respondEmitter.emit(reqId, new Error("Request timeout"), true),
+          this.opts.requestTimeout
+        );
+
         const reqId = Math.random().toString(36).substring(2, 9);
         this.respondEmitter.once(
           reqId,
           (data: any, isError: boolean = false) => {
+            clearTimeout(timer);
             if (!isError) resolve(data);
             else reject(data);
           }

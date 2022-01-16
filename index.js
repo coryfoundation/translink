@@ -83,6 +83,8 @@ var Translink = /** @class */ (function () {
             this.opts.logger = console;
         if (!this.opts.encoding)
             this.opts.encoding = "utf8";
+        if (!this.opts.requestTimeout)
+            this.opts.requestTimeout = 10 * 1000;
     }
     Translink.prototype.connect = function () {
         var _a, _b, _c, _d, _e;
@@ -168,15 +170,19 @@ var Translink = /** @class */ (function () {
                             var node = _this._findAvailableNode(eventId);
                             if (!node)
                                 throw "Event " + eventId + " not exist in network";
-                            var reqId = Math.random().toString(36).substring(2, 9);
-                            _this.respondEmitter.once(reqId, function (data, isError) {
+                            var timer_1 = setTimeout(function () {
+                                return _this.respondEmitter.emit(reqId_1, new Error("Request timeout"), true);
+                            }, _this.opts.requestTimeout);
+                            var reqId_1 = Math.random().toString(36).substring(2, 9);
+                            _this.respondEmitter.once(reqId_1, function (data, isError) {
                                 if (isError === void 0) { isError = false; }
+                                clearTimeout(timer_1);
                                 if (!isError)
                                     resolve(data);
                                 else
                                     reject(data);
                             });
-                            node === null || node === void 0 ? void 0 : node.node.write(_this._prepareOutgoingData([eventId, data, reqId]));
+                            node === null || node === void 0 ? void 0 : node.node.write(_this._prepareOutgoingData([eventId, data, reqId_1]));
                         }
                         catch (err) {
                             reject(err);

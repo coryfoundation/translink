@@ -1,6 +1,6 @@
 {
   "name": "@coryfoundation/translink",
-  "version": "1.1.0",
+  "version": "1.1.2",
   "description": "Link your nodes simple without the need for queues and intermediate servers!",
   "main": "index.js",
   "dependencies": {
