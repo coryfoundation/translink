@@ -26,7 +26,7 @@ export default class Translink {
   private client: Hyperswarm | null = null;
   private net: PeerDiscovery | null = null;
   private nodeID: string | null = null;
-  private heartbeatTimer: NodeJS.Timer | null = null;
+  heartbeatTimer: NodeJS.Timer | null = null;
   private eventEmitter = new EventEmitter();
   private respondEmitter = new EventEmitter();
   private nodes: Map<
@@ -177,7 +177,7 @@ export default class Translink {
 
   private heartbeatCheck() {
     this.nodes.forEach((node, key) => {
-      if (Date.now() - node.heartbeat > this.opts.heartbeatTimeout) {
+      if (Date.now() - node.heartbeat > Number(this.opts?.heartbeatTimeout)) {
         if (this.opts.log) {
           this.opts.logger?.log(
             "Heartbeat timeout for node " +

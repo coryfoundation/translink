@@ -197,10 +197,10 @@ var Translink = /** @class */ (function () {
     Translink.prototype.heartbeatCheck = function () {
         var _this = this;
         this.nodes.forEach(function (node, key) {
-            var _a;
-            if (Date.now() - node.heartbeat > _this.opts.heartbeatTimeout) {
+            var _a, _b;
+            if (Date.now() - node.heartbeat > Number((_a = _this.opts) === null || _a === void 0 ? void 0 : _a.heartbeatTimeout)) {
                 if (_this.opts.log) {
-                    (_a = _this.opts.logger) === null || _a === void 0 ? void 0 : _a.log("Heartbeat timeout for node " +
+                    (_b = _this.opts.logger) === null || _b === void 0 ? void 0 : _b.log("Heartbeat timeout for node " +
                         node.node.userData +
                         ". Remove from nodes list");
                 }
