@@ -51,6 +51,16 @@ bridge.get('my.request', { something: 'data' })
 })
 ```
 
+**Broadcast event to nodes with same event**
+```js
+bridge.broadcast('my.event', { something: 'data' })
+```
+
+**Broadcast event to all nodes**
+```js
+bridge.broadcastToAllNodes('my.event', { something: 'data' })
+```
+
 ## Replic nodes
 You can duplicate nodes with the same subscriptions an infinite number of times. Translink will send a message to a random available node.
 
