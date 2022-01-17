@@ -241,6 +241,25 @@ export default class Translink {
     });
   }
 
+  public broadcast(eventId: string, data: DataType) {
+    const nodes = Array.from(this.nodes.values()).filter(
+      (cell) => cell.listenerNames.indexOf(eventId) !== -1
+    );
+
+    if (nodes.length === 0)
+      throw "Event " + eventId + " not registered on network";
+
+    nodes.map((node) =>
+      node.node.write(this._prepareOutgoingData([eventId, data]))
+    );
+  }
+
+  public broadcastToAllNodes(eventId: string, data: DataType) {
+    this.nodes.forEach((node) =>
+      node.node.write(this._prepareOutgoingData([eventId, data]))
+    );
+  }
+
   public subscribe(eventId: string, listener: (...args: any[]) => any) {
     this.eventEmitter.on(eventId, (data: any) => listener(data[1]));
   }

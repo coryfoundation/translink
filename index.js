@@ -258,6 +258,21 @@ var Translink = /** @class */ (function () {
             });
         });
     };
+    Translink.prototype.broadcast = function (eventId, data) {
+        var _this = this;
+        var nodes = Array.from(this.nodes.values()).filter(function (cell) { return cell.listenerNames.indexOf(eventId) !== -1; });
+        if (nodes.length === 0)
+            throw "Event " + eventId + " not registered on network";
+        nodes.map(function (node) {
+            return node.node.write(_this._prepareOutgoingData([eventId, data]));
+        });
+    };
+    Translink.prototype.broadcastToAllNodes = function (eventId, data) {
+        var _this = this;
+        this.nodes.forEach(function (node) {
+            return node.node.write(_this._prepareOutgoingData([eventId, data]));
+        });
+    };
     Translink.prototype.subscribe = function (eventId, listener) {
         this.eventEmitter.on(eventId, function (data) { return listener(data[1]); });
     };
