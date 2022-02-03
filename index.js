@@ -65,6 +65,13 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 exports.__esModule = true;
 var hyperswarm_1 = __importDefault(require("hyperswarm"));
 var events_1 = __importDefault(require("events"));
+var RequestError = /** @class */ (function () {
+    function RequestError(args) {
+        this.message = args.message;
+        this.code = args.code;
+    }
+    return RequestError;
+}());
 var Translink = /** @class */ (function () {
     function Translink(opts) {
         var _this = this;
@@ -96,15 +103,18 @@ var Translink = /** @class */ (function () {
     Translink.prototype.connect = function () {
         var _a, _b, _c, _d, _e;
         return __awaiter(this, void 0, void 0, function () {
+            var err_1;
             return __generator(this, function (_f) {
                 switch (_f.label) {
                     case 0:
+                        _f.trys.push([0, 2, , 3]);
                         this.client = new hyperswarm_1["default"]({
                             maxPeers: Infinity,
                             maxClientConnections: Infinity,
                             maxServerConnections: Infinity
                         });
                         this.client.on("connection", this.onConnection.bind(this));
+                        this.client.on("error", function (err) { return console.error(err); });
                         this.net = this.client.join(Buffer.alloc(32).fill(String(this.opts.namespace)), { server: true, client: true });
                         if (this.opts.log) {
                             (_b = (_a = this.opts) === null || _a === void 0 ? void 0 : _a.logger) === null || _b === void 0 ? void 0 : _b.info("Translink :: Waiting to announcing...");
@@ -115,7 +125,12 @@ var Translink = /** @class */ (function () {
                         if (this.opts.log) {
                             (_e = (_d = this.opts) === null || _d === void 0 ? void 0 : _d.logger) === null || _e === void 0 ? void 0 : _e.info("Translink :: Joined to network.");
                         }
-                        return [2 /*return*/];
+                        return [3 /*break*/, 3];
+                    case 2:
+                        err_1 = _f.sent();
+                        console.error("Translink :: Connection error", err_1);
+                        return [3 /*break*/, 3];
+                    case 3: return [2 /*return*/];
                 }
             });
         });
@@ -214,7 +229,10 @@ var Translink = /** @class */ (function () {
     Translink.prototype.emit = function (eventId, data) {
         var node = this._findAvailableNode(eventId);
         if (!node)
-            throw "Event " + eventId + " not exist in network";
+            throw new RequestError({
+                code: "EVENT_NOT_EXIST",
+                message: "Event " + eventId + " not exist in network"
+            });
         node === null || node === void 0 ? void 0 : node.node.write(this._prepareOutgoingData([eventId, data]));
         return true;
     };
@@ -228,7 +246,10 @@ var Translink = /** @class */ (function () {
                         try {
                             var node = _this._findAvailableNode(eventId);
                             if (!node)
-                                throw "Event " + eventId + " not exist in network";
+                                throw new RequestError({
+                                    code: "EVENT_NOT_EXIST",
+                                    message: "Event " + eventId + " not exist in network"
+                                });
                             var timer_1 = setTimeout(function () {
                                 return _this.respondEmitter.emit(reqId_1, new Error("Request timeout"), true);
                             }, _this.opts.requestTimeout);
@@ -262,7 +283,10 @@ var Translink = /** @class */ (function () {
         var _this = this;
         var nodes = Array.from(this.nodes.values()).filter(function (cell) { return cell.listenerNames.indexOf(eventId) !== -1; });
         if (nodes.length === 0)
-            throw "Event " + eventId + " not registered on network";
+            throw new RequestError({
+                code: "EVENT_NOT_REGISTERED",
+                message: "Event " + eventId + " not registered in network"
+            });
         nodes.map(function (node) {
             return node.node.write(_this._prepareOutgoingData([eventId, data]));
         });

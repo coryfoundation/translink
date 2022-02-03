@@ -21,6 +21,16 @@ declare interface Opts {
 
 declare type DataType = any[] | object | string | Buffer;
 
+class RequestError {
+  code: String;
+  message: String;
+
+  constructor(args: any) {
+    this.message = args.message;
+    this.code = args.code;
+  }
+}
+
 export default class Translink {
   private opts: Opts;
   private client: Hyperswarm | null = null;
@@ -41,6 +51,7 @@ export default class Translink {
       Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
     if (!this.opts.namespace)
       throw new Error("Namespace has not been set in options!");
+
     if (!this.opts.logger) this.opts.logger = console;
     if (!this.opts.encoding) this.opts.encoding = "utf8";
     if (!this.opts.requestTimeout) this.opts.requestTimeout = 10 * 1000;
@@ -54,26 +65,31 @@ export default class Translink {
   }
 
   public async connect() {
-    this.client = new Hyperswarm({
-      maxPeers: Infinity,
-      maxClientConnections: Infinity,
-      maxServerConnections: Infinity,
-    });
-    this.client.on("connection", this.onConnection.bind(this));
+    try {
+      this.client = new Hyperswarm({
+        maxPeers: Infinity,
+        maxClientConnections: Infinity,
+        maxServerConnections: Infinity,
+      });
+      this.client.on("connection", this.onConnection.bind(this));
+      this.client.on("error", (err) => console.error(err));
 
-    this.net = this.client.join(
-      Buffer.alloc(32).fill(String(this.opts.namespace)),
-      { server: true, client: true }
-    );
+      this.net = this.client.join(
+        Buffer.alloc(32).fill(String(this.opts.namespace)),
+        { server: true, client: true }
+      );
 
-    if (this.opts.log) {
-      this.opts?.logger?.info("Translink :: Waiting to announcing...");
-    }
+      if (this.opts.log) {
+        this.opts?.logger?.info("Translink :: Waiting to announcing...");
+      }
 
-    await this.net?.flushed();
+      await this.net?.flushed();
 
-    if (this.opts.log) {
-      this.opts?.logger?.info("Translink :: Joined to network.");
+      if (this.opts.log) {
+        this.opts?.logger?.info("Translink :: Joined to network.");
+      }
+    } catch (err) {
+      console.error("Translink :: Connection error", err);
     }
   }
 
@@ -195,7 +211,11 @@ export default class Translink {
 
   public emit(eventId: string, data: DataType) {
     const node = this._findAvailableNode(eventId);
-    if (!node) throw "Event " + eventId + " not exist in network";
+    if (!node)
+      throw new RequestError({
+        code: "EVENT_NOT_EXIST",
+        message: "Event " + eventId + " not exist in network",
+      });
     node?.node.write(this._prepareOutgoingData([eventId, data]));
     return true;
   }
@@ -205,7 +225,11 @@ export default class Translink {
     return new Promise((resolve, reject) => {
       try {
         const node = this._findAvailableNode(eventId);
-        if (!node) throw "Event " + eventId + " not exist in network";
+        if (!node)
+          throw new RequestError({
+            code: "EVENT_NOT_EXIST",
+            message: "Event " + eventId + " not exist in network",
+          });
 
         const timer = setTimeout(
           () =>
@@ -247,7 +271,10 @@ export default class Translink {
     );
 
     if (nodes.length === 0)
-      throw "Event " + eventId + " not registered on network";
+      throw new RequestError({
+        code: "EVENT_NOT_REGISTERED",
+        message: "Event " + eventId + " not registered in network",
+      });
 
     nodes.map((node) =>
       node.node.write(this._prepareOutgoingData([eventId, data]))
