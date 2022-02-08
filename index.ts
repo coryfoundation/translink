@@ -70,6 +70,7 @@ export default class Translink {
         maxPeers: Infinity,
         maxClientConnections: Infinity,
         maxServerConnections: Infinity,
+        maxParallel: 5,
       });
       this.client.on("connection", this.onConnection.bind(this));
       this.client.on("error", (err) => console.error(err));

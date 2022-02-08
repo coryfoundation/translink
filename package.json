@@ -1,12 +1,11 @@
 {
   "name": "@coryfoundation/translink",
-  "version": "1.1.9",
+  "version": "1.2.0",
   "description": "Link your nodes simple without the need for queues and intermediate servers!",
   "main": "index.js",
   "dependencies": {
-    "hyperswarm": "^3.0.1"
+    "hyperswarm": "^3.0.2"
   },
-  "devDependencies": {},
   "scripts": {
     "build": "tsc --esModuleInterop --downlevelIteration index.ts"
   },
@@ -26,5 +25,8 @@
   "bugs": {
     "url": "https://github.com/coryfoundation/translink/issues"
   },
-  "homepage": "https://github.com/coryfoundation/translink#readme"
+  "homepage": "https://github.com/coryfoundation/translink#readme",
+  "devDependencies": {
+    "@types/node": "^17.0.16"
+  }
 }
