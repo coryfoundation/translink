@@ -17,6 +17,10 @@ declare interface Opts {
   requestTimeout?: number;
   heartbeatInterval?: number;
   heartbeatTimeout?: number;
+  maxPeers?: number;
+  maxClientConnections?: number;
+  maxServerConnections?: number;
+  maxParallel?: number;
 }
 
 declare type DataType = any[] | object | string | Buffer;
@@ -57,6 +61,12 @@ export default class Translink {
     if (!this.opts.requestTimeout) this.opts.requestTimeout = 10 * 1000;
     if (!this.opts.heartbeatInterval) this.opts.heartbeatInterval = 5 * 1000;
     if (!this.opts.heartbeatTimeout) this.opts.heartbeatTimeout = 10 * 1000;
+    if (!this.opts.maxClientConnections)
+      this.opts.maxClientConnections = Infinity;
+    if (!this.opts.maxServerConnections)
+      this.opts.maxServerConnections = Infinity;
+    if (!this.opts.maxPeers) this.opts.maxPeers = Infinity;
+    if (!this.opts.maxParallel) this.opts.maxParallel = Infinity;
 
     this.heartbeatTimer = setInterval(
       () => this.heartbeatCheck(),
@@ -67,13 +77,15 @@ export default class Translink {
   public async connect() {
     try {
       this.client = new Hyperswarm({
-        maxPeers: Infinity,
-        maxClientConnections: Infinity,
-        maxServerConnections: Infinity,
-        maxParallel: 5,
+        maxPeers: this.opts.maxPeers,
+        maxClientConnections: this.opts.maxClientConnections,
+        maxServerConnections: this.opts.maxServerConnections,
+        maxParallel: this.opts.maxParallel,
       });
       this.client.on("connection", this.onConnection.bind(this));
-      this.client.on("error", (err) => console.error(err));
+      this.client.on("error", (err: Error) =>
+        this.opts?.logger?.error("hyperswarm error", err)
+      );
 
       this.net = this.client.join(
         Buffer.alloc(32).fill(String(this.opts.namespace)),
@@ -86,16 +98,19 @@ export default class Translink {
 
       await this.net?.flushed();
 
-      if (this.opts.log) {
+      if (this.opts.log)
         this.opts?.logger?.info("Translink :: Joined to network.");
-      }
     } catch (err) {
-      console.error("Translink :: Connection error", err);
+      this.opts?.logger?.error("Translink :: Connection error", err);
     }
   }
 
   private onConnection(node: NoiseSecretStream) {
     // Inform about the connection
+    node.on("data", (data: Buffer) => this.onMessage(data, node));
+    node.on("error", (error: Error) =>
+      console.error("hyperswarm error", error)
+    );
     node.write(
       this._prepareOutgoingData([
         ":peer",
@@ -103,7 +118,6 @@ export default class Translink {
         this.eventEmitter.eventNames(),
       ])
     );
-    node.on("data", (data: Buffer) => this.onMessage(data, node));
   }
 
   private onMessage(data: Buffer, node: NoiseSecretStream) {
@@ -118,77 +132,81 @@ export default class Translink {
       this.opts.logger?.info("Getted event " + eventName);
     }
 
-    //Informing about the connection
-    if (eventName === ":peer") {
-      // Set node id
-      node.userData = String(data[1]);
-      this.nodes.set(node.userData, {
-        listenerNames: [...data[2]],
-        node,
-        heartbeat: Date.now(),
-      });
-      // Inform to console
-      if (this.opts.log) {
-        this.opts.logger?.info(
-          "Translink :: Node",
-          node.userData,
-          "connected with listeners " + JSON.stringify(data[2] ?? [])
-        );
-      }
-    } else if (eventName === ":res") {
-      if (this.opts.log) {
-        this.opts.logger?.info(
-          "Translink :: Result got for request",
-          String(data[2]),
-          " from node " + node.userData
-        );
-      }
-
-      this.respondEmitter.emit(String(data[2]), data[1]);
-    } else if (eventName === ":err") {
-      if (this.opts.log) {
-        this.opts.logger?.info(
-          "Translink :: Error result getted for request",
-          String(data[2]),
-          " from node " + node.userData
-        );
-      }
-
-      this.respondEmitter.emit(String(data[2]), data[1], true);
-    } else if (eventName === ":hb") {
-      const $node = this.nodes.get(node.userData);
-      if (!$node) return;
-
-      $node.heartbeat = Date.now();
-      this.nodes.set(node.userData, $node);
-    } else {
-      const nodeCell = this.nodes.get(node.userData);
-      if (!nodeCell) {
+    try {
+      //Informing about the connection
+      if (eventName === ":peer") {
+        // Set node id
+        node.userData = String(data[1]);
+        this.nodes.set(node.userData, {
+          listenerNames: [...data[2]],
+          node,
+          heartbeat: Date.now(),
+        });
+        // Inform to console
         if (this.opts.log) {
-          this.opts.logger?.log(
-            "Node's " + node.userData + " cell not found. Skip"
+          this.opts.logger?.info(
+            "Translink :: Node",
+            node.userData,
+            "connected with listeners " + JSON.stringify(data[2] ?? [])
+          );
+        }
+      } else if (eventName === ":res") {
+        if (this.opts.log) {
+          this.opts.logger?.info(
+            "Translink :: Result got for request",
+            String(data[2]),
+            " from node " + node.userData
           );
         }
 
-        return;
-      }
-
-      data.push(node.userData);
-
-      if (this.opts.log) {
-        this.opts.logger?.info("Executing event " + eventName);
-      }
-
-      const success = this.eventEmitter.emit(eventName, data);
-      if (!success) {
+        this.respondEmitter.emit(String(data[2]), data[1]);
+      } else if (eventName === ":err") {
         if (this.opts.log) {
-          this.opts.logger?.log(
-            "Event's " + eventName + " handler response is not success. Skip"
+          this.opts.logger?.info(
+            "Translink :: Error result getted for request",
+            String(data[2]),
+            " from node " + node.userData
           );
+        }
+
+        this.respondEmitter.emit(String(data[2]), data[1], true);
+      } else if (eventName === ":hb") {
+        const $node = this.nodes.get(node.userData);
+        if (!$node) return;
+
+        $node.heartbeat = Date.now();
+        this.nodes.set(node.userData, $node);
+      } else {
+        const nodeCell = this.nodes.get(node.userData);
+        if (!nodeCell) {
+          if (this.opts.log) {
+            this.opts.logger?.log(
+              "Node's " + node.userData + " cell not found. Skip"
+            );
+          }
 
           return;
         }
+
+        data.push(node.userData);
+
+        if (this.opts.log) {
+          this.opts.logger?.info("Executing event " + eventName);
+        }
+
+        const success = this.eventEmitter.emit(eventName, data);
+        if (!success) {
+          if (this.opts.log) {
+            this.opts.logger?.log(
+              "Event's " + eventName + " handler response is not success. Skip"
+            );
+
+            return;
+          }
+        }
       }
+    } catch (error) {
+      this.opts.logger?.error("error", error);
     }
   }
 

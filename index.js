@@ -98,37 +98,46 @@ var Translink = /** @class */ (function () {
             this.opts.heartbeatInterval = 5 * 1000;
         if (!this.opts.heartbeatTimeout)
             this.opts.heartbeatTimeout = 10 * 1000;
+        if (!this.opts.maxClientConnections)
+            this.opts.maxClientConnections = Infinity;
+        if (!this.opts.maxServerConnections)
+            this.opts.maxServerConnections = Infinity;
+        if (!this.opts.maxPeers)
+            this.opts.maxPeers = Infinity;
+        if (!this.opts.maxParallel)
+            this.opts.maxParallel = Infinity;
         this.heartbeatTimer = setInterval(function () { return _this.heartbeatCheck(); }, this.opts.heartbeatInterval);
     }
     Translink.prototype.connect = function () {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c, _d, _e, _f, _g;
         return __awaiter(this, void 0, void 0, function () {
             var err_1;
-            return __generator(this, function (_f) {
-                switch (_f.label) {
+            var _this = this;
+            return __generator(this, function (_h) {
+                switch (_h.label) {
                     case 0:
-                        _f.trys.push([0, 2, , 3]);
+                        _h.trys.push([0, 2, , 3]);
                         this.client = new hyperswarm_1["default"]({
-                            maxPeers: Infinity,
-                            maxClientConnections: Infinity,
-                            maxServerConnections: Infinity
+                            maxPeers: this.opts.maxPeers,
+                            maxClientConnections: this.opts.maxClientConnections,
+                            maxServerConnections: this.opts.maxServerConnections,
+                            maxParallel: this.opts.maxParallel
                         });
                         this.client.on("connection", this.onConnection.bind(this));
-                        this.client.on("error", function (err) { return console.error(err); });
+                        this.client.on("error", function (err) { var _a, _b; return (_b = (_a = _this.opts) === null || _a === void 0 ? void 0 : _a.logger) === null || _b === void 0 ? void 0 : _b.error("hyperswarm error", err); });
                         this.net = this.client.join(Buffer.alloc(32).fill(String(this.opts.namespace)), { server: true, client: true });
                         if (this.opts.log) {
                             (_b = (_a = this.opts) === null || _a === void 0 ? void 0 : _a.logger) === null || _b === void 0 ? void 0 : _b.info("Translink :: Waiting to announcing...");
                         }
                         return [4 /*yield*/, ((_c = this.net) === null || _c === void 0 ? void 0 : _c.flushed())];
                     case 1:
-                        _f.sent();
-                        if (this.opts.log) {
+                        _h.sent();
+                        if (this.opts.log)
                             (_e = (_d = this.opts) === null || _d === void 0 ? void 0 : _d.logger) === null || _e === void 0 ? void 0 : _e.info("Translink :: Joined to network.");
-                        }
                         return [3 /*break*/, 3];
                     case 2:
-                        err_1 = _f.sent();
-                        console.error("Translink :: Connection error", err_1);
+                        err_1 = _h.sent();
+                        (_g = (_f = this.opts) === null || _f === void 0 ? void 0 : _f.logger) === null || _g === void 0 ? void 0 : _g.error("Translink :: Connection error", err_1);
                         return [3 /*break*/, 3];
                     case 3: return [2 /*return*/];
                 }
@@ -138,75 +147,83 @@ var Translink = /** @class */ (function () {
     Translink.prototype.onConnection = function (node) {
         var _this = this;
         // Inform about the connection
+        node.on("data", function (data) { return _this.onMessage(data, node); });
+        node.on("error", function (error) {
+            return console.error("hyperswarm error", error);
+        });
         node.write(this._prepareOutgoingData([
             ":peer",
             this.nodeID,
             this.eventEmitter.eventNames(),
         ]));
-        node.on("data", function (data) { return _this.onMessage(data, node); });
     };
     Translink.prototype.onMessage = function (data, node) {
         var preparedData = this._prepareIncomingData(data);
         this.processMessageEvent(preparedData, node);
     };
     Translink.prototype.processMessageEvent = function (data, node) {
-        var _a, _b, _c, _d, _e, _f, _g, _h;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
         var eventName = String(data[0]);
         if (this.opts.log) {
             (_a = this.opts.logger) === null || _a === void 0 ? void 0 : _a.info("Getted event " + eventName);
         }
-        //Informing about the connection
-        if (eventName === ":peer") {
-            // Set node id
-            node.userData = String(data[1]);
-            this.nodes.set(node.userData, {
-                listenerNames: __spreadArray([], __read(data[2])),
-                node: node,
-                heartbeat: Date.now()
-            });
-            // Inform to console
-            if (this.opts.log) {
-                (_b = this.opts.logger) === null || _b === void 0 ? void 0 : _b.info("Translink :: Node", node.userData, "connected with listeners " + JSON.stringify((_c = data[2]) !== null && _c !== void 0 ? _c : []));
-            }
-        }
-        else if (eventName === ":res") {
-            if (this.opts.log) {
-                (_d = this.opts.logger) === null || _d === void 0 ? void 0 : _d.info("Translink :: Result got for request", String(data[2]), " from node " + node.userData);
-            }
-            this.respondEmitter.emit(String(data[2]), data[1]);
-        }
-        else if (eventName === ":err") {
-            if (this.opts.log) {
-                (_e = this.opts.logger) === null || _e === void 0 ? void 0 : _e.info("Translink :: Error result getted for request", String(data[2]), " from node " + node.userData);
-            }
-            this.respondEmitter.emit(String(data[2]), data[1], true);
-        }
-        else if (eventName === ":hb") {
-            var $node = this.nodes.get(node.userData);
-            if (!$node)
-                return;
-            $node.heartbeat = Date.now();
-            this.nodes.set(node.userData, $node);
-        }
-        else {
-            var nodeCell = this.nodes.get(node.userData);
-            if (!nodeCell) {
+        try {
+            //Informing about the connection
+            if (eventName === ":peer") {
+                // Set node id
+                node.userData = String(data[1]);
+                this.nodes.set(node.userData, {
+                    listenerNames: __spreadArray([], __read(data[2])),
+                    node: node,
+                    heartbeat: Date.now()
+                });
+                // Inform to console
                 if (this.opts.log) {
-                    (_f = this.opts.logger) === null || _f === void 0 ? void 0 : _f.log("Node's " + node.userData + " cell not found. Skip");
+                    (_b = this.opts.logger) === null || _b === void 0 ? void 0 : _b.info("Translink :: Node", node.userData, "connected with listeners " + JSON.stringify((_c = data[2]) !== null && _c !== void 0 ? _c : []));
                 }
-                return;
             }
-            data.push(node.userData);
-            if (this.opts.log) {
-                (_g = this.opts.logger) === null || _g === void 0 ? void 0 : _g.info("Executing event " + eventName);
-            }
-            var success = this.eventEmitter.emit(eventName, data);
-            if (!success) {
+            else if (eventName === ":res") {
                 if (this.opts.log) {
-                    (_h = this.opts.logger) === null || _h === void 0 ? void 0 : _h.log("Event's " + eventName + " handler response is not success. Skip");
+                    (_d = this.opts.logger) === null || _d === void 0 ? void 0 : _d.info("Translink :: Result got for request", String(data[2]), " from node " + node.userData);
+                }
+                this.respondEmitter.emit(String(data[2]), data[1]);
+            }
+            else if (eventName === ":err") {
+                if (this.opts.log) {
+                    (_e = this.opts.logger) === null || _e === void 0 ? void 0 : _e.info("Translink :: Error result getted for request", String(data[2]), " from node " + node.userData);
+                }
+                this.respondEmitter.emit(String(data[2]), data[1], true);
+            }
+            else if (eventName === ":hb") {
+                var $node = this.nodes.get(node.userData);
+                if (!$node)
+                    return;
+                $node.heartbeat = Date.now();
+                this.nodes.set(node.userData, $node);
+            }
+            else {
+                var nodeCell = this.nodes.get(node.userData);
+                if (!nodeCell) {
+                    if (this.opts.log) {
+                        (_f = this.opts.logger) === null || _f === void 0 ? void 0 : _f.log("Node's " + node.userData + " cell not found. Skip");
+                    }
                     return;
                 }
+                data.push(node.userData);
+                if (this.opts.log) {
+                    (_g = this.opts.logger) === null || _g === void 0 ? void 0 : _g.info("Executing event " + eventName);
+                }
+                var success = this.eventEmitter.emit(eventName, data);
+                if (!success) {
+                    if (this.opts.log) {
+                        (_h = this.opts.logger) === null || _h === void 0 ? void 0 : _h.log("Event's " + eventName + " handler response is not success. Skip");
+                        return;
+                    }
+                }
             }
+        }
+        catch (error) {
+            (_j = this.opts.logger) === null || _j === void 0 ? void 0 : _j.error("error", error);
         }
     };
     Translink.prototype.heartbeatCheck = function () {
