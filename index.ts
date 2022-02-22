@@ -4,7 +4,6 @@
 
 import Hyperswarm from "hyperswarm";
 import PeerDiscovery from "hyperswarm/lib/peer-discovery";
-// @ts-ignore
 import NoiseSecretStream from "@hyperswarm/secret-stream";
 import EventEmitter from "events";
 
@@ -12,6 +11,7 @@ declare interface Opts {
   namespace: string;
   nodeID?: string;
   log?: boolean;
+  logErrors?: boolean;
   logger?: Console;
   encoding?: string;
   requestTimeout?: number;
@@ -50,12 +50,15 @@ export default class Translink {
 
   constructor(opts: Opts) {
     this.opts = opts;
+
     this.nodeID =
       this.opts.nodeID ??
       Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
+
     if (!this.opts.namespace)
       throw new Error("Namespace has not been set in options!");
 
+    if (!this.opts.logErrors) this.opts.logErrors = true;
     if (!this.opts.logger) this.opts.logger = console;
     if (!this.opts.encoding) this.opts.encoding = "utf8";
     if (!this.opts.requestTimeout) this.opts.requestTimeout = 10 * 1000;
@@ -76,63 +79,81 @@ export default class Translink {
 
   public async connect() {
     try {
-      this.client = new Hyperswarm({
-        maxPeers: this.opts.maxPeers,
-        maxClientConnections: this.opts.maxClientConnections,
-        maxServerConnections: this.opts.maxServerConnections,
-        maxParallel: this.opts.maxParallel,
+      return new Promise((resolve, reject) => {
+        this.client = new Hyperswarm({
+          maxPeers: this.opts.maxPeers,
+          maxClientConnections: this.opts.maxClientConnections,
+          maxServerConnections: this.opts.maxServerConnections,
+          maxParallel: this.opts.maxParallel,
+        });
+
+        this.client.on("connection", this.onConnection.bind(this));
+
+        this.client.on("error", (err: Error) =>
+          this.logErr("hyperswarm error", err)
+        );
+
+        this.net = this.client.join(
+          Buffer.alloc(32).fill(String(this.opts.namespace)),
+          { server: true, client: true }
+        );
+
+        this.log("Waiting to announcing...");
+        this.net
+          ?.flushed()
+          .then(() => {
+            this.log(
+              "Joined to network. Waiting for connecting other nodes..."
+            );
+
+            const interval = setInterval(() => {
+              if (this.nodes.size > 0) {
+                clearInterval(interval);
+                resolve(true);
+              }
+            }, 500);
+          })
+          .catch(reject);
       });
-      this.client.on("connection", this.onConnection.bind(this));
-      this.client.on("error", (err: Error) =>
-        this.opts?.logger?.error("hyperswarm error", err)
-      );
-
-      this.net = this.client.join(
-        Buffer.alloc(32).fill(String(this.opts.namespace)),
-        { server: true, client: true }
-      );
-
-      if (this.opts.log) {
-        this.opts?.logger?.info("Translink :: Waiting to announcing...");
-      }
-
-      await this.net?.flushed();
-
-      if (this.opts.log)
-        this.opts?.logger?.info("Translink :: Joined to network.");
     } catch (err) {
-      this.opts?.logger?.error("Translink :: Connection error", err);
+      this.logErr("Connection error", err);
     }
   }
 
   private onConnection(node: NoiseSecretStream) {
-    // Inform about the connection
-    node.on("data", (data: Buffer) => this.onMessage(data, node));
-    node.on("error", (error: Error) =>
-      console.error("hyperswarm error", error)
-    );
-    node.write(
-      this._prepareOutgoingData([
-        ":peer",
-        this.nodeID,
-        this.eventEmitter.eventNames(),
-      ])
-    );
+    try {
+      // Inform about the connection
+      node.on("data", (data: Buffer) => this.onMessage(data, node));
+      node.on("error", (error: Error) =>
+        this.logErr("hyperswarm error", error)
+      );
+      node.write(
+        this._prepareOutgoingData([
+          ":peer",
+          this.nodeID,
+          this.eventEmitter.eventNames(),
+        ])
+      );
+    } catch (err) {
+      if (this.opts.logErrors) this.logErr("onConnection() error", err);
+    }
   }
 
   private onMessage(data: Buffer, node: NoiseSecretStream) {
-    const preparedData: any = this._prepareIncomingData(data);
-    this.processMessageEvent(preparedData, node);
+    try {
+      const preparedData: any = this._prepareIncomingData(data);
+      this.processMessageEvent(preparedData, node);
+    } catch (err) {
+      if (this.opts.logErrors) this.logErr("onMessage() error", err);
+    }
   }
 
   private processMessageEvent(data: Array<any>, node: NoiseSecretStream) {
-    const eventName = String(data[0]);
-
-    if (this.opts.log) {
-      this.opts.logger?.info("Getted event " + eventName);
-    }
-
     try {
+      const eventName = String(data[0]);
+
+      if (this.opts.log) this.log("Getted event " + eventName);
+
       //Informing about the connection
       if (eventName === ":peer") {
         // Set node id
@@ -142,32 +163,30 @@ export default class Translink {
           node,
           heartbeat: Date.now(),
         });
+
         // Inform to console
-        if (this.opts.log) {
-          this.opts.logger?.info(
-            "Translink :: Node",
+        if (this.opts.log)
+          this.log(
+            "Node",
             node.userData,
             "connected with listeners " + JSON.stringify(data[2] ?? [])
           );
-        }
       } else if (eventName === ":res") {
-        if (this.opts.log) {
-          this.opts.logger?.info(
-            "Translink :: Result got for request",
+        if (this.opts.log)
+          this.log(
+            "Result got for request",
             String(data[2]),
             " from node " + node.userData
           );
-        }
 
         this.respondEmitter.emit(String(data[2]), data[1]);
       } else if (eventName === ":err") {
-        if (this.opts.log) {
-          this.opts.logger?.info(
-            "Translink :: Error result getted for request",
+        if (this.opts.log)
+          this.log(
+            "Error result getted for request",
             String(data[2]),
             " from node " + node.userData
           );
-        }
 
         this.respondEmitter.emit(String(data[2]), data[1], true);
       } else if (eventName === ":hb") {
@@ -179,47 +198,38 @@ export default class Translink {
       } else {
         const nodeCell = this.nodes.get(node.userData);
         if (!nodeCell) {
-          if (this.opts.log) {
-            this.opts.logger?.log(
-              "Node's " + node.userData + " cell not found. Skip"
-            );
-          }
+          if (this.opts.log)
+            this.log("Node's " + node.userData + " cell not found. Skip");
 
           return;
         }
 
         data.push(node.userData);
 
-        if (this.opts.log) {
-          this.opts.logger?.info("Executing event " + eventName);
-        }
+        if (this.opts.log) this.log("Executing event " + eventName);
 
         const success = this.eventEmitter.emit(eventName, data);
-        if (!success) {
-          if (this.opts.log) {
-            this.opts.logger?.log(
-              "Event's " + eventName + " handler response is not success. Skip"
-            );
+        if (!success && this.opts.log)
+          this.log(
+            "Event's " + eventName + " handler response is not success. Skip"
+          );
 
-            return;
-          }
-        }
+        return success;
       }
-    } catch (error) {
-      this.opts.logger?.error("error", error);
+    } catch (err) {
+      if (this.opts.logErrors) this.logErr("processMessageEvent() error", err);
     }
   }
 
   private heartbeatCheck() {
     this.nodes.forEach((node, key) => {
       if (Date.now() - node.heartbeat > Number(this.opts?.heartbeatTimeout)) {
-        if (this.opts.log) {
-          this.opts.logger?.log(
+        if (this.opts.log)
+          this.log(
             "Heartbeat timeout for node " +
               node.node.userData +
               ". Remove from nodes list"
           );
-        }
 
         this.nodes.delete(key);
       } else {
@@ -229,14 +239,20 @@ export default class Translink {
   }
 
   public emit(eventId: string, data: DataType) {
-    const node = this._findAvailableNode(eventId);
-    if (!node)
-      throw new RequestError({
-        code: "EVENT_NOT_EXIST",
-        message: "Event " + eventId + " not exist in network",
-      });
-    node?.node.write(this._prepareOutgoingData([eventId, data]));
-    return true;
+    try {
+      const node = this._findAvailableNode(eventId);
+
+      if (!node)
+        throw new RequestError({
+          code: "EVENT_NOT_EXIST",
+          message: "Event " + eventId + " not exist in network",
+        });
+
+      node?.node.write(this._prepareOutgoingData([eventId, data]));
+      return true;
+    } catch (err) {
+      throw err;
+    }
   }
 
   public async get(eventId: string, data: DataType): Promise<any> {
@@ -244,6 +260,7 @@ export default class Translink {
     return new Promise((resolve, reject) => {
       try {
         const node = this._findAvailableNode(eventId);
+
         if (!node)
           throw new RequestError({
             code: "EVENT_NOT_EXIST",
@@ -257,6 +274,7 @@ export default class Translink {
         );
 
         const reqId = Math.random().toString(36).substring(2, 9);
+
         this.respondEmitter.once(
           reqId,
           (data: any, isError: boolean = false) => {
@@ -266,8 +284,8 @@ export default class Translink {
           }
         );
 
-        if (this.opts.log) {
-          this.opts.logger?.info(
+        if (this.opts.log)
+          this.log(
             "Request " +
               eventId +
               " with id " +
@@ -275,7 +293,6 @@ export default class Translink {
               " sent to node " +
               node.node.userData
           );
-        }
 
         node?.node.write(this._prepareOutgoingData([eventId, data, reqId]));
       } catch (err) {
@@ -285,96 +302,139 @@ export default class Translink {
   }
 
   public broadcast(eventId: string, data: DataType) {
-    const nodes = Array.from(this.nodes.values()).filter(
-      (cell) => cell.listenerNames.indexOf(eventId) !== -1
-    );
+    try {
+      const nodes = Array.from(this.nodes.values()).filter(
+        (cell) => cell.listenerNames.indexOf(eventId) !== -1
+      );
 
-    if (nodes.length === 0)
-      throw new RequestError({
-        code: "EVENT_NOT_REGISTERED",
-        message: "Event " + eventId + " not registered in network",
-      });
+      if (nodes.length === 0)
+        throw new RequestError({
+          code: "EVENT_NOT_REGISTERED",
+          message: "Event " + eventId + " not registered in network",
+        });
 
-    nodes.map((node) =>
-      node.node.write(this._prepareOutgoingData([eventId, data]))
-    );
+      nodes.map((node) =>
+        node.node.write(this._prepareOutgoingData([eventId, data]))
+      );
+    } catch (err) {
+      throw err;
+    }
   }
 
   public broadcastToAllNodes(eventId: string, data: DataType) {
-    this.nodes.forEach((node) =>
-      node.node.write(this._prepareOutgoingData([eventId, data]))
-    );
+    try {
+      this.nodes.forEach((node) =>
+        node.node.write(this._prepareOutgoingData([eventId, data]))
+      );
+    } catch (err) {
+      throw err;
+    }
   }
 
   public subscribe(eventId: string, listener: (...args: any[]) => any) {
-    this.eventEmitter.on(eventId, (data: any) => listener(data[1]));
+    try {
+      this.eventEmitter.on(eventId, (data: any) => listener(data[1]));
+    } catch (err) {
+      if (this.opts.logErrors) this.logErr("subscribe() error", err);
+    }
   }
 
   public subscribeReq(eventId: string, listener: (...args: any[]) => any) {
-    this.eventEmitter.on(eventId, (data) =>
-      this._bindReqResult(listener, data)
-    );
+    try {
+      this.eventEmitter.on(eventId, (data) =>
+        this._bindReqResult(listener, data)
+      );
+    } catch (err) {
+      if (this.opts.logErrors) this.logErr("subscribeReq() error", err);
+    }
   }
 
   private _prepareIncomingData(
     data: Buffer | string
   ): Array<any> | object | Buffer {
-    if (this.opts.encoding === "utf8") {
-      data = data.toString();
-      return data.indexOf("[") !== -1 || data.indexOf("{") !== -1
-        ? JSON.parse(data)
-        : data;
-    } else return Buffer.from(data);
+    try {
+      if (this.opts.encoding === "utf8") {
+        data = data.toString();
+        return data.indexOf("[") !== -1 || data.indexOf("{") !== -1
+          ? JSON.parse(data)
+          : data;
+      } else return Buffer.from(data);
+    } catch (err) {
+      if (this.opts.logErrors) this.logErr("_prepareIncomingData() error", err);
+      return {};
+    }
   }
 
   private _prepareOutgoingData(data: DataType): string | DataType {
-    return this.opts.encoding === "utf8"
-      ? typeof data === "object"
-        ? JSON.stringify(data)
-        : data
-      : data;
+    try {
+      return this.opts.encoding === "utf8"
+        ? typeof data === "object"
+          ? JSON.stringify(data)
+          : data
+        : data;
+    } catch (err) {
+      if (this.opts.logErrors) this.logErr("_prepareOutgoingData() error", err);
+      return "{}";
+    }
   }
 
   private _findAvailableNode(eventId: string) {
-    const nodes = Array.from(this.nodes.values()).filter(
-      (cell) => cell.listenerNames.indexOf(eventId) !== -1
-    );
-    return nodes[Math.floor(Math.random() * nodes.length)];
+    try {
+      const nodes = Array.from(this.nodes.values()).filter(
+        (cell) => cell.listenerNames.indexOf(eventId) !== -1
+      );
+      return nodes[Math.floor(Math.random() * nodes.length)];
+    } catch (err) {
+      if (this.opts.logErrors) this.logErr("_findAvailableNode() error", err);
+      return null;
+    }
   }
 
   private _bindReqResult(listener: (...args: any[]) => any, data: any) {
-    const reqId = data[2];
-    const nodeID = data[3];
-    const node = this.nodes.get(nodeID);
+    try {
+      const reqId = data[2];
+      const nodeID = data[3];
+      const node = this.nodes.get(nodeID);
 
-    if (this.opts.log) {
-      this.opts.logger?.log(
-        "Request received " +
-          reqId +
-          " from node " +
-          nodeID +
-          ". Executing handler"
-      );
-    }
-
-    listener(data[1], data[3])
-      .then((result: DataType) => {
-        if (this.opts.log) {
-          this.opts.logger?.log(
-            "Result received from handler for request " +
-              reqId +
-              " and node " +
-              nodeID +
-              ". Return result"
-          );
-        }
-
-        node?.node?.write(this._prepareOutgoingData([":res", result, reqId]));
-      })
-      .catch((err: Error) => {
-        node?.node?.write(
-          this._prepareOutgoingData([":err", err.stack ?? err, reqId])
+      if (this.opts.log)
+        this.log(
+          "Request received " +
+            reqId +
+            " from node " +
+            nodeID +
+            ". Executing handler"
         );
-      });
+
+      listener(data[1], data[3])
+        .then((result: DataType) => {
+          if (this.opts.log)
+            this.log(
+              "Result received from handler for request " +
+                reqId +
+                " and node " +
+                nodeID +
+                ". Return result"
+            );
+
+          node?.node?.write(this._prepareOutgoingData([":res", result, reqId]));
+        })
+        .catch((err: Error) => {
+          node?.node?.write(
+            this._prepareOutgoingData([":err", err.stack ?? err, reqId])
+          );
+        });
+    } catch (err) {
+      if (this.opts.logErrors) this.logErr("_bindReqResult() error", err);
+    }
+  }
+
+  private log(...args: any[]) {
+    if (!this.opts.log) return;
+    this.opts.logger?.info(...args);
+  }
+
+  private logErr(...args: any[]) {
+    if (!this.opts.log) return;
+    this.logErr(...args);
   }
 }
