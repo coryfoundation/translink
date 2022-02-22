@@ -51,6 +51,16 @@ bridge.get('my.request', { something: 'data' })
 })
 ```
 
+**Broadcast request to nodes**
+```js
+bridge.broadcastReq('my.request', { something: 'data' })
+.then((results) => {
+  // results is array with all responses
+}).catch((error) => {
+  console.error('Error', error)
+})
+```
+
 **Broadcast event to nodes with same event**
 ```js
 bridge.broadcast('my.event', { something: 'data' })

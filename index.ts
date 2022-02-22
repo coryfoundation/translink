@@ -6,6 +6,7 @@ import Hyperswarm from "hyperswarm";
 import PeerDiscovery from "hyperswarm/lib/peer-discovery";
 import NoiseSecretStream from "@hyperswarm/secret-stream";
 import EventEmitter from "events";
+import pmap from "p-map";
 
 declare interface Opts {
   namespace: string;
@@ -21,9 +22,15 @@ declare interface Opts {
   maxClientConnections?: number;
   maxServerConnections?: number;
   maxParallel?: number;
+  broadcastReqConcurrency?: number;
 }
 
 declare type DataType = any[] | object | string | Buffer;
+declare interface Node {
+  listenerNames: string[];
+  heartbeat: number;
+  node: NoiseSecretStream;
+}
 
 class RequestError {
   code: String;
@@ -43,10 +50,7 @@ export default class Translink {
   heartbeatTimer: NodeJS.Timer | null = null;
   private eventEmitter = new EventEmitter();
   private respondEmitter = new EventEmitter();
-  private nodes: Map<
-    string,
-    { listenerNames: string[]; heartbeat: number; node: NoiseSecretStream }
-  > = new Map();
+  private nodes: Map<string, Node> = new Map();
 
   constructor(opts: Opts) {
     this.opts = opts;
@@ -70,6 +74,8 @@ export default class Translink {
       this.opts.maxServerConnections = Infinity;
     if (!this.opts.maxPeers) this.opts.maxPeers = Infinity;
     if (!this.opts.maxParallel) this.opts.maxParallel = Infinity;
+    if (!this.opts.broadcastReqConcurrency)
+      this.opts.broadcastReqConcurrency = 5;
 
     this.heartbeatTimer = setInterval(
       () => this.heartbeatCheck(),
@@ -255,12 +261,11 @@ export default class Translink {
     }
   }
 
-  public async get(eventId: string, data: DataType): Promise<any> {
+  public async get(eventId: string, data: DataType, node?: Node): Promise<any> {
     // Trying to find node with this event
     return new Promise((resolve, reject) => {
       try {
-        const node = this._findAvailableNode(eventId);
-
+        if (!node) node = this._findAvailableNode(eventId);
         if (!node)
           throw new RequestError({
             code: "EVENT_NOT_EXIST",
@@ -331,6 +336,26 @@ export default class Translink {
     }
   }
 
+  public async broadcastReq(eventId: string, data: DataType): Promise<any> {
+    try {
+      return await pmap(
+        this._findAvailableNodes(eventId),
+        (node) => {
+          return new Promise((resolve, reject) => {
+            const timer = setTimeout(reject, 500);
+            this.get(eventId, data, node)
+              .then(resolve)
+              .catch(reject)
+              .finally(() => clearTimeout(timer));
+          });
+        },
+        { concurrency: this.opts.broadcastReqConcurrency, stopOnError: false }
+      );
+    } catch (err) {
+      throw err;
+    }
+  }
+
   public subscribe(eventId: string, listener: (...args: any[]) => any) {
     try {
       this.eventEmitter.on(eventId, (data: any) => listener(data[1]));
@@ -384,6 +409,18 @@ export default class Translink {
         (cell) => cell.listenerNames.indexOf(eventId) !== -1
       );
       return nodes[Math.floor(Math.random() * nodes.length)];
+    } catch (err) {
+      if (this.opts.logErrors) this.logErr("_findAvailableNode() error", err);
+      return null;
+    }
+  }
+
+  private _findAvailableNodes(eventId: string) {
+    try {
+      const nodes = Array.from(this.nodes.values()).filter(
+        (cell) => cell.listenerNames.indexOf(eventId) !== -1
+      );
+      return nodes;
     } catch (err) {
       if (this.opts.logErrors) this.logErr("_findAvailableNode() error", err);
       return null;

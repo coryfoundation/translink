@@ -65,6 +65,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 exports.__esModule = true;
 var hyperswarm_1 = __importDefault(require("hyperswarm"));
 var events_1 = __importDefault(require("events"));
+var p_map_1 = __importDefault(require("p-map"));
 var RequestError = /** @class */ (function () {
     function RequestError(args) {
         this.message = args.message;
@@ -108,6 +109,8 @@ var Translink = /** @class */ (function () {
             this.opts.maxPeers = Infinity;
         if (!this.opts.maxParallel)
             this.opts.maxParallel = Infinity;
+        if (!this.opts.broadcastReqConcurrency)
+            this.opts.broadcastReqConcurrency = 5;
         this.heartbeatTimer = setInterval(function () { return _this.heartbeatCheck(); }, this.opts.heartbeatInterval);
     }
     Translink.prototype.connect = function () {
@@ -264,14 +267,15 @@ var Translink = /** @class */ (function () {
             throw err;
         }
     };
-    Translink.prototype.get = function (eventId, data) {
+    Translink.prototype.get = function (eventId, data, node) {
         return __awaiter(this, void 0, void 0, function () {
             var _this = this;
             return __generator(this, function (_a) {
                 // Trying to find node with this event
                 return [2 /*return*/, new Promise(function (resolve, reject) {
                         try {
-                            var node = _this._findAvailableNode(eventId);
+                            if (!node)
+                                node = _this._findAvailableNode(eventId);
                             if (!node)
                                 throw new RequestError({
                                     code: "EVENT_NOT_EXIST",
@@ -333,6 +337,30 @@ var Translink = /** @class */ (function () {
             throw err;
         }
     };
+    Translink.prototype.broadcastReq = function (eventId, data) {
+        return __awaiter(this, void 0, void 0, function () {
+            var err_1;
+            var _this = this;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        _a.trys.push([0, 2, , 3]);
+                        return [4 /*yield*/, p_map_1["default"](this._findAvailableNodes(eventId), function (node) {
+                                return new Promise(function (resolve, reject) {
+                                    var timer = setTimeout(reject, 500);
+                                    _this.get(eventId, data, node)
+                                        .then(resolve)["catch"](reject)["finally"](function () { return clearTimeout(timer); });
+                                });
+                            }, { concurrency: this.opts.broadcastReqConcurrency, stopOnError: false })];
+                    case 1: return [2 /*return*/, _a.sent()];
+                    case 2:
+                        err_1 = _a.sent();
+                        throw err_1;
+                    case 3: return [2 /*return*/];
+                }
+            });
+        });
+    };
     Translink.prototype.subscribe = function (eventId, listener) {
         try {
             this.eventEmitter.on(eventId, function (data) { return listener(data[1]); });
@@ -389,6 +417,17 @@ var Translink = /** @class */ (function () {
         try {
             var nodes = Array.from(this.nodes.values()).filter(function (cell) { return cell.listenerNames.indexOf(eventId) !== -1; });
             return nodes[Math.floor(Math.random() * nodes.length)];
+        }
+        catch (err) {
+            if (this.opts.logErrors)
+                this.logErr("_findAvailableNode() error", err);
+            return null;
+        }
+    };
+    Translink.prototype._findAvailableNodes = function (eventId) {
+        try {
+            var nodes = Array.from(this.nodes.values()).filter(function (cell) { return cell.listenerNames.indexOf(eventId) !== -1; });
+            return nodes;
         }
         catch (err) {
             if (this.opts.logErrors)

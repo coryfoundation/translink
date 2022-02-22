@@ -1,10 +1,11 @@
 {
   "name": "@coryfoundation/translink",
-  "version": "1.2.2",
+  "version": "1.2.3",
   "description": "Link your nodes simple without the need for queues and intermediate servers!",
   "main": "index.js",
   "dependencies": {
-    "hyperswarm": "^3.0.2"
+    "hyperswarm": "^3.0.2",
+    "p-map": "4.0.0"
   },
   "scripts": {
     "build": "tsc --esModuleInterop --downlevelIteration index.ts"
