@@ -330,7 +330,7 @@ export default class Translink {
             );
             this.get(eventId, data, node)
               .then((res) => resolve(res))
-              .catch((e) => resolve(e))
+              .catch(() => resolve(null))
               .finally(() => clearTimeout(timer));
           })
         );
