@@ -185,7 +185,7 @@ export default class Translink {
         if (this.opts.log)
           this.log("error response =>", reqId, { nodeID: node.userData });
 
-        this.respondEmitter.emit(reqId, data[1], true);
+        this.respondEmitter.emit(reqId, JSON.parse(data[1]), true);
       } else if (eventName === ":hb") {
         const $node = this.nodes.get(node.userData);
         if (!$node) return;
@@ -437,7 +437,11 @@ export default class Translink {
         })
         .catch((err: Error) => {
           node?.node?.write(
-            this._prepareOutgoingData([":err", err.stack ?? err, reqId])
+            this._prepareOutgoingData([
+              ":err",
+              JSON.stringify(err, Object.getOwnPropertyNames(err)),
+              reqId,
+            ])
           );
         });
     } catch (err) {
@@ -452,6 +456,6 @@ export default class Translink {
 
   private logErr(...args: any[]) {
     if (!this.opts.log) return;
-    this.logErr(...args);
+    this.opts.logger?.error(...args);
   }
 }

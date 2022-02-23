@@ -212,7 +212,7 @@ var Translink = /** @class */ (function () {
                 var reqId = String(data[2]);
                 if (this.opts.log)
                     this.log("error response =>", reqId, { nodeID: node.userData });
-                this.respondEmitter.emit(reqId, data[1], true);
+                this.respondEmitter.emit(reqId, JSON.parse(data[1]), true);
             }
             else if (eventName === ":hb") {
                 var $node = this.nodes.get(node.userData);
@@ -452,8 +452,12 @@ var Translink = /** @class */ (function () {
                     _this.log("listener response =>", { reqId: reqId_2, nodeID: nodeID_1 });
                 (_a = node_1 === null || node_1 === void 0 ? void 0 : node_1.node) === null || _a === void 0 ? void 0 : _a.write(_this._prepareOutgoingData([":res", result, reqId_2]));
             })["catch"](function (err) {
-                var _a, _b;
-                (_a = node_1 === null || node_1 === void 0 ? void 0 : node_1.node) === null || _a === void 0 ? void 0 : _a.write(_this._prepareOutgoingData([":err", (_b = err.stack) !== null && _b !== void 0 ? _b : err, reqId_2]));
+                var _a;
+                (_a = node_1 === null || node_1 === void 0 ? void 0 : node_1.node) === null || _a === void 0 ? void 0 : _a.write(_this._prepareOutgoingData([
+                    ":err",
+                    JSON.stringify(err, Object.getOwnPropertyNames(err)),
+                    reqId_2,
+                ]));
             });
         }
         catch (err) {
@@ -472,13 +476,14 @@ var Translink = /** @class */ (function () {
         (_a = this.opts.logger) === null || _a === void 0 ? void 0 : _a.info.apply(_a, __spreadArray([], __read(args)));
     };
     Translink.prototype.logErr = function () {
+        var _a;
         var args = [];
         for (var _i = 0; _i < arguments.length; _i++) {
             args[_i] = arguments[_i];
         }
         if (!this.opts.log)
             return;
-        this.logErr.apply(this, __spreadArray([], __read(args)));
+        (_a = this.opts.logger) === null || _a === void 0 ? void 0 : _a.error.apply(_a, __spreadArray([], __read(args)));
     };
     return Translink;
 }());
