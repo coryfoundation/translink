@@ -350,7 +350,10 @@ export default class Translink {
     }
   }
 
-  public subscribe(eventId: string, listener: (...args: any[]) => any) {
+  public subscribe(
+    eventId: string,
+    listener: <T = unknown>(data: any) => Promise<any>
+  ) {
     try {
       this.eventEmitter.on(eventId, (data: any) => listener(data[1]));
     } catch (err) {
@@ -358,7 +361,10 @@ export default class Translink {
     }
   }
 
-  public subscribeReq(eventId: string, listener: (...args: any[]) => any) {
+  public subscribeReq(
+    eventId: string,
+    listener: <T = unknown>(data: any) => Promise<any>
+  ) {
     try {
       this.eventEmitter.on(eventId, (data) =>
         this._bindReqResult(listener, data)
