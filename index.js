@@ -65,7 +65,8 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 exports.__esModule = true;
 var hyperswarm_1 = __importDefault(require("hyperswarm"));
 var events_1 = __importDefault(require("events"));
-var p_map_1 = __importDefault(require("p-map"));
+var bluebird_1 = __importDefault(require("bluebird"));
+var msgpack5_1 = __importDefault(require("msgpack5"));
 var RequestError = /** @class */ (function () {
     function RequestError(args) {
         this.message = args.message;
@@ -84,6 +85,7 @@ var Translink = /** @class */ (function () {
         this.eventEmitter = new events_1["default"]();
         this.respondEmitter = new events_1["default"]();
         this.nodes = new Map();
+        this.packer = msgpack5_1["default"]();
         this.opts = opts;
         this.nodeID =
             (_a = this.opts.nodeID) !== null && _a !== void 0 ? _a : Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
@@ -131,11 +133,14 @@ var Translink = /** @class */ (function () {
                                 return _this.logErr("hyperswarm error", err);
                             });
                             _this.net = _this.client.join(Buffer.alloc(32).fill(String(_this.opts.namespace)), { server: true, client: true });
-                            _this.log("Waiting to announcing...");
+                            if (_this.opts.log)
+                                _this.log("=> announcing");
                             (_a = _this.net) === null || _a === void 0 ? void 0 : _a.flushed().then(function () {
-                                _this.log("Joined to network. Waiting for connecting other nodes...");
+                                if (_this.opts.log)
+                                    _this.log("=> announced");
                                 var interval = setInterval(function () {
                                     if (_this.nodes.size > 0) {
+                                        _this.log("=> connected");
                                         clearInterval(interval);
                                         resolve(true);
                                     }
@@ -180,11 +185,8 @@ var Translink = /** @class */ (function () {
         }
     };
     Translink.prototype.processMessageEvent = function (data, node) {
-        var _a;
         try {
             var eventName = String(data[0]);
-            if (this.opts.log)
-                this.log("Getted event " + eventName);
             //Informing about the connection
             if (eventName === ":peer") {
                 // Set node id
@@ -196,17 +198,19 @@ var Translink = /** @class */ (function () {
                 });
                 // Inform to console
                 if (this.opts.log)
-                    this.log("Node", node.userData, "connected with listeners " + JSON.stringify((_a = data[2]) !== null && _a !== void 0 ? _a : []));
+                    this.log("connected =>", { nodeID: node.userData });
             }
             else if (eventName === ":res") {
+                var reqId = String(data[2]);
                 if (this.opts.log)
-                    this.log("Result got for request", String(data[2]), " from node " + node.userData);
-                this.respondEmitter.emit(String(data[2]), data[1]);
+                    this.log("response =>", reqId, { nodeID: node.userData });
+                this.respondEmitter.emit(reqId, data[1]);
             }
             else if (eventName === ":err") {
+                var reqId = String(data[2]);
                 if (this.opts.log)
-                    this.log("Error result getted for request", String(data[2]), " from node " + node.userData);
-                this.respondEmitter.emit(String(data[2]), data[1], true);
+                    this.log("error response =>", reqId, { nodeID: node.userData });
+                this.respondEmitter.emit(reqId, data[1], true);
             }
             else if (eventName === ":hb") {
                 var $node = this.nodes.get(node.userData);
@@ -219,15 +223,15 @@ var Translink = /** @class */ (function () {
                 var nodeCell = this.nodes.get(node.userData);
                 if (!nodeCell) {
                     if (this.opts.log)
-                        this.log("Node's " + node.userData + " cell not found. Skip");
+                        this.log("node not found =>", { nodeID: node.userData });
                     return;
                 }
                 data.push(node.userData);
                 if (this.opts.log)
-                    this.log("Executing event " + eventName);
+                    this.log("executing =>", { eventName: eventName });
                 var success = this.eventEmitter.emit(eventName, data);
                 if (!success && this.opts.log)
-                    this.log("Event's " + eventName + " handler response is not success. Skip");
+                    this.log("is not success =>", { eventName: eventName });
                 return success;
             }
         }
@@ -242,9 +246,7 @@ var Translink = /** @class */ (function () {
             var _a;
             if (Date.now() - node.heartbeat > Number((_a = _this.opts) === null || _a === void 0 ? void 0 : _a.heartbeatTimeout)) {
                 if (_this.opts.log)
-                    _this.log("Heartbeat timeout for node " +
-                        node.node.userData +
-                        ". Remove from nodes list");
+                    _this.log("heartbeat timeout =>", { nodeID: node.node.userData });
                 _this.nodes["delete"](key);
             }
             else {
@@ -294,12 +296,11 @@ var Translink = /** @class */ (function () {
                                     reject(data);
                             });
                             if (_this.opts.log)
-                                _this.log("Request " +
-                                    eventId +
-                                    " with id " +
-                                    reqId_1 +
-                                    " sent to node " +
-                                    node.node.userData);
+                                _this.log("request sent =>", {
+                                    eventId: eventId,
+                                    reqId: reqId_1,
+                                    nodeID: node.node.userData
+                                });
                             node === null || node === void 0 ? void 0 : node.node.write(_this._prepareOutgoingData([eventId, data, reqId_1]));
                         }
                         catch (err) {
@@ -339,20 +340,26 @@ var Translink = /** @class */ (function () {
     };
     Translink.prototype.broadcastReq = function (eventId, data) {
         return __awaiter(this, void 0, void 0, function () {
-            var err_1;
+            var promises_1, results, err_1;
             var _this = this;
             return __generator(this, function (_a) {
                 switch (_a.label) {
                     case 0:
                         _a.trys.push([0, 2, , 3]);
-                        return [4 /*yield*/, p_map_1["default"](this._findAvailableNodes(eventId), function (node) {
-                                return new Promise(function (resolve, reject) {
-                                    var timer = setTimeout(reject, 500);
-                                    _this.get(eventId, data, node)
-                                        .then(resolve)["catch"](reject)["finally"](function () { return clearTimeout(timer); });
-                                });
-                            }, { concurrency: this.opts.broadcastReqConcurrency, stopOnError: false })];
-                    case 1: return [2 /*return*/, _a.sent()];
+                        promises_1 = [];
+                        this._findAvailableNodes(eventId).forEach(function (node) {
+                            promises_1.push(new Promise(function (resolve) {
+                                var timer = setTimeout(function () { return resolve(null); }, 500);
+                                _this.get(eventId, data, node)
+                                    .then(function (res) { return resolve(res); })["catch"](function (e) { return resolve(e); })["finally"](function () { return clearTimeout(timer); });
+                            }));
+                        });
+                        return [4 /*yield*/, bluebird_1["default"].Promise.map(promises_1, function (promise) {
+                                return promise;
+                            }, { concurrency: this.opts.broadcastReqConcurrency })];
+                    case 1:
+                        results = _a.sent();
+                        return [2 /*return*/, results.filter(function (r) { return r !== null; })];
                     case 2:
                         err_1 = _a.sent();
                         throw err_1;
@@ -384,14 +391,7 @@ var Translink = /** @class */ (function () {
     };
     Translink.prototype._prepareIncomingData = function (data) {
         try {
-            if (this.opts.encoding === "utf8") {
-                data = data.toString();
-                return data.indexOf("[") !== -1 || data.indexOf("{") !== -1
-                    ? JSON.parse(data)
-                    : data;
-            }
-            else
-                return Buffer.from(data);
+            return this.packer.decode(data);
         }
         catch (err) {
             if (this.opts.logErrors)
@@ -403,7 +403,7 @@ var Translink = /** @class */ (function () {
         try {
             return this.opts.encoding === "utf8"
                 ? typeof data === "object"
-                    ? JSON.stringify(data)
+                    ? this.packer.encode(data)
                     : data
                 : data;
         }
@@ -442,20 +442,12 @@ var Translink = /** @class */ (function () {
             var nodeID_1 = data[3];
             var node_1 = this.nodes.get(nodeID_1);
             if (this.opts.log)
-                this.log("Request received " +
-                    reqId_2 +
-                    " from node " +
-                    nodeID_1 +
-                    ". Executing handler");
+                this.log("incoming =>", { reqId: reqId_2, nodeID: nodeID_1 });
             listener(data[1], data[3])
                 .then(function (result) {
                 var _a;
                 if (_this.opts.log)
-                    _this.log("Result received from handler for request " +
-                        reqId_2 +
-                        " and node " +
-                        nodeID_1 +
-                        ". Return result");
+                    _this.log("listener response =>", { reqId: reqId_2, nodeID: nodeID_1 });
                 (_a = node_1 === null || node_1 === void 0 ? void 0 : node_1.node) === null || _a === void 0 ? void 0 : _a.write(_this._prepareOutgoingData([":res", result, reqId_2]));
             })["catch"](function (err) {
                 var _a, _b;

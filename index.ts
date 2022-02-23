@@ -6,7 +6,8 @@ import Hyperswarm from "hyperswarm";
 import PeerDiscovery from "hyperswarm/lib/peer-discovery";
 import NoiseSecretStream from "@hyperswarm/secret-stream";
 import EventEmitter from "events";
-import pmap from "p-map";
+import bluebird from "bluebird";
+import msgpack from "msgpack5";
 
 declare interface Opts {
   namespace: string;
@@ -25,7 +26,7 @@ declare interface Opts {
   broadcastReqConcurrency?: number;
 }
 
-declare type DataType = any[] | object | string | Buffer;
+declare type DataType = any[] | object | string | Buffer | msgpack.MessagePack;
 declare interface Node {
   listenerNames: string[];
   heartbeat: number;
@@ -51,6 +52,7 @@ export default class Translink {
   private eventEmitter = new EventEmitter();
   private respondEmitter = new EventEmitter();
   private nodes: Map<string, Node> = new Map();
+  private packer = msgpack();
 
   constructor(opts: Opts) {
     this.opts = opts;
@@ -104,16 +106,15 @@ export default class Translink {
           { server: true, client: true }
         );
 
-        this.log("Waiting to announcing...");
+        if (this.opts.log) this.log("=> announcing");
         this.net
           ?.flushed()
           .then(() => {
-            this.log(
-              "Joined to network. Waiting for connecting other nodes..."
-            );
+            if (this.opts.log) this.log("=> announced");
 
             const interval = setInterval(() => {
               if (this.nodes.size > 0) {
+                this.log("=> connected");
                 clearInterval(interval);
                 resolve(true);
               }
@@ -158,8 +159,6 @@ export default class Translink {
     try {
       const eventName = String(data[0]);
 
-      if (this.opts.log) this.log("Getted event " + eventName);
-
       //Informing about the connection
       if (eventName === ":peer") {
         // Set node id
@@ -171,30 +170,20 @@ export default class Translink {
         });
 
         // Inform to console
-        if (this.opts.log)
-          this.log(
-            "Node",
-            node.userData,
-            "connected with listeners " + JSON.stringify(data[2] ?? [])
-          );
+        if (this.opts.log) this.log("connected =>", { nodeID: node.userData });
       } else if (eventName === ":res") {
+        const reqId = String(data[2]);
         if (this.opts.log)
-          this.log(
-            "Result got for request",
-            String(data[2]),
-            " from node " + node.userData
-          );
+          this.log("response =>", reqId, { nodeID: node.userData });
 
-        this.respondEmitter.emit(String(data[2]), data[1]);
+        this.respondEmitter.emit(reqId, data[1]);
       } else if (eventName === ":err") {
-        if (this.opts.log)
-          this.log(
-            "Error result getted for request",
-            String(data[2]),
-            " from node " + node.userData
-          );
+        const reqId = String(data[2]);
 
-        this.respondEmitter.emit(String(data[2]), data[1], true);
+        if (this.opts.log)
+          this.log("error response =>", reqId, { nodeID: node.userData });
+
+        this.respondEmitter.emit(reqId, data[1], true);
       } else if (eventName === ":hb") {
         const $node = this.nodes.get(node.userData);
         if (!$node) return;
@@ -205,20 +194,17 @@ export default class Translink {
         const nodeCell = this.nodes.get(node.userData);
         if (!nodeCell) {
           if (this.opts.log)
-            this.log("Node's " + node.userData + " cell not found. Skip");
-
+            this.log("node not found =>", { nodeID: node.userData });
           return;
         }
 
         data.push(node.userData);
 
-        if (this.opts.log) this.log("Executing event " + eventName);
+        if (this.opts.log) this.log("executing =>", { eventName });
 
         const success = this.eventEmitter.emit(eventName, data);
         if (!success && this.opts.log)
-          this.log(
-            "Event's " + eventName + " handler response is not success. Skip"
-          );
+          this.log("is not success =>", { eventName });
 
         return success;
       }
@@ -231,11 +217,7 @@ export default class Translink {
     this.nodes.forEach((node, key) => {
       if (Date.now() - node.heartbeat > Number(this.opts?.heartbeatTimeout)) {
         if (this.opts.log)
-          this.log(
-            "Heartbeat timeout for node " +
-              node.node.userData +
-              ". Remove from nodes list"
-          );
+          this.log("heartbeat timeout =>", { nodeID: node.node.userData });
 
         this.nodes.delete(key);
       } else {
@@ -290,14 +272,11 @@ export default class Translink {
         );
 
         if (this.opts.log)
-          this.log(
-            "Request " +
-              eventId +
-              " with id " +
-              reqId +
-              " sent to node " +
-              node.node.userData
-          );
+          this.log("request sent =>", {
+            eventId,
+            reqId,
+            nodeID: node.node.userData,
+          });
 
         node?.node.write(this._prepareOutgoingData([eventId, data, reqId]));
       } catch (err) {
@@ -338,19 +317,29 @@ export default class Translink {
 
   public async broadcastReq(eventId: string, data: DataType): Promise<any> {
     try {
-      return await pmap(
-        this._findAvailableNodes(eventId),
-        (node) => {
-          return new Promise((resolve, reject) => {
-            const timer = setTimeout(reject, 500);
+      let promises = [];
+
+      this._findAvailableNodes(eventId).forEach((node) => {
+        promises.push(
+          new Promise((resolve) => {
+            const timer = setTimeout(() => resolve(null), 500);
             this.get(eventId, data, node)
-              .then(resolve)
-              .catch(reject)
+              .then((res) => resolve(res))
+              .catch((e) => resolve(e))
               .finally(() => clearTimeout(timer));
-          });
+          })
+        );
+      });
+
+      const results = await bluebird.Promise.map(
+        promises,
+        (promise: Promise<unknown>) => {
+          return promise;
         },
-        { concurrency: this.opts.broadcastReqConcurrency, stopOnError: false }
+        { concurrency: this.opts.broadcastReqConcurrency }
       );
+
+      return results.filter((r) => r !== null);
     } catch (err) {
       throw err;
     }
@@ -374,16 +363,9 @@ export default class Translink {
     }
   }
 
-  private _prepareIncomingData(
-    data: Buffer | string
-  ): Array<any> | object | Buffer {
+  private _prepareIncomingData(data: Buffer): Array<any> | object | Buffer {
     try {
-      if (this.opts.encoding === "utf8") {
-        data = data.toString();
-        return data.indexOf("[") !== -1 || data.indexOf("{") !== -1
-          ? JSON.parse(data)
-          : data;
-      } else return Buffer.from(data);
+      return this.packer.decode(data);
     } catch (err) {
       if (this.opts.logErrors) this.logErr("_prepareIncomingData() error", err);
       return {};
@@ -394,7 +376,7 @@ export default class Translink {
     try {
       return this.opts.encoding === "utf8"
         ? typeof data === "object"
-          ? JSON.stringify(data)
+          ? this.packer.encode(data)
           : data
         : data;
     } catch (err) {
@@ -433,25 +415,12 @@ export default class Translink {
       const nodeID = data[3];
       const node = this.nodes.get(nodeID);
 
-      if (this.opts.log)
-        this.log(
-          "Request received " +
-            reqId +
-            " from node " +
-            nodeID +
-            ". Executing handler"
-        );
+      if (this.opts.log) this.log("incoming =>", { reqId, nodeID });
 
       listener(data[1], data[3])
         .then((result: DataType) => {
           if (this.opts.log)
-            this.log(
-              "Result received from handler for request " +
-                reqId +
-                " and node " +
-                nodeID +
-                ". Return result"
-            );
+            this.log("listener response =>", { reqId, nodeID });
 
           node?.node?.write(this._prepareOutgoingData([":res", result, reqId]));
         })
