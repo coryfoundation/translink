@@ -113,6 +113,8 @@ var Translink = /** @class */ (function () {
             this.opts.maxParallel = Infinity;
         if (!this.opts.broadcastReqConcurrency)
             this.opts.broadcastReqConcurrency = 5;
+        if (!this.opts.broadcastReqTimeout)
+            this.opts.broadcastReqTimeout = 1000;
         this.heartbeatTimer = setInterval(function () { return _this.heartbeatCheck(); }, this.opts.heartbeatInterval);
     }
     Translink.prototype.connect = function () {
@@ -349,7 +351,7 @@ var Translink = /** @class */ (function () {
                         promises_1 = [];
                         this._findAvailableNodes(eventId).forEach(function (node) {
                             promises_1.push(new Promise(function (resolve) {
-                                var timer = setTimeout(function () { return resolve(null); }, 500);
+                                var timer = setTimeout(function () { return resolve(null); }, _this.opts.broadcastReqTimeout);
                                 _this.get(eventId, data, node)
                                     .then(function (res) { return resolve(res); })["catch"](function (e) { return resolve(e); })["finally"](function () { return clearTimeout(timer); });
                             }));
