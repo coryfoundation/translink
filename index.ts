@@ -25,6 +25,7 @@ declare interface Opts {
   maxParallel?: number;
   broadcastReqConcurrency?: number;
   broadcastReqTimeout?: number;
+  waitForPeer?: boolean;
 }
 
 declare type DataType = any[] | object | string | Buffer | msgpack.MessagePack;
@@ -80,6 +81,7 @@ export default class Translink {
     if (!this.opts.broadcastReqConcurrency)
       this.opts.broadcastReqConcurrency = 5;
     if (!this.opts.broadcastReqTimeout) this.opts.broadcastReqTimeout = 1000;
+    if (!this.opts.waitForPeer) this.opts.waitForPeer = true;
 
     this.heartbeatTimer = setInterval(
       () => this.heartbeatCheck(),
@@ -115,7 +117,7 @@ export default class Translink {
             if (this.opts.log) this.log("=> announced");
 
             const interval = setInterval(() => {
-              if (this.nodes.size > 0) {
+              if (this.nodes.size > 0 || !this.opts.waitForPeer) {
                 this.log("=> connected");
                 clearInterval(interval);
                 resolve(true);

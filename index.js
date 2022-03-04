@@ -115,6 +115,8 @@ var Translink = /** @class */ (function () {
             this.opts.broadcastReqConcurrency = 5;
         if (!this.opts.broadcastReqTimeout)
             this.opts.broadcastReqTimeout = 1000;
+        if (!this.opts.waitForPeer)
+            this.opts.waitForPeer = true;
         this.heartbeatTimer = setInterval(function () { return _this.heartbeatCheck(); }, this.opts.heartbeatInterval);
     }
     Translink.prototype.connect = function () {
@@ -141,7 +143,7 @@ var Translink = /** @class */ (function () {
                                 if (_this.opts.log)
                                     _this.log("=> announced");
                                 var interval = setInterval(function () {
-                                    if (_this.nodes.size > 0) {
+                                    if (_this.nodes.size > 0 || !_this.opts.waitForPeer) {
                                         _this.log("=> connected");
                                         clearInterval(interval);
                                         resolve(true);
@@ -353,7 +355,7 @@ var Translink = /** @class */ (function () {
                             promises_1.push(new Promise(function (resolve) {
                                 var timer = setTimeout(function () { return resolve(null); }, _this.opts.broadcastReqTimeout);
                                 _this.get(eventId, data, node)
-                                    .then(function (res) { return resolve(res); })["catch"](function (e) { return resolve(e); })["finally"](function () { return clearTimeout(timer); });
+                                    .then(function (res) { return resolve(res); })["catch"](function () { return resolve(null); })["finally"](function () { return clearTimeout(timer); });
                             }));
                         });
                         return [4 /*yield*/, bluebird_1["default"].Promise.map(promises_1, function (promise) {

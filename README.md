@@ -94,6 +94,11 @@ Request timeout for **broadcastReq()** method
 * **Required:** `false`
 * **Default:** `1000`
 
+#### `waitForPeer (boolean)`
+Do we need to wait for the connection of the peer
+* **Required:** `false`
+* **Default:** `true`
+
 ## Usage
 ### Request
 #### Subscribe
