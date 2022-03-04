@@ -57,7 +57,7 @@ export default class Translink {
   private packer = msgpack();
 
   constructor(opts: Opts) {
-    this.opts = opts;
+    this.opts = Object.assign({}, opts);
 
     this.nodeID =
       this.opts.nodeID ??
@@ -81,7 +81,8 @@ export default class Translink {
     if (!this.opts.broadcastReqConcurrency)
       this.opts.broadcastReqConcurrency = 5;
     if (!this.opts.broadcastReqTimeout) this.opts.broadcastReqTimeout = 1000;
-    if (!this.opts.waitForPeer) this.opts.waitForPeer = true;
+    if (typeof this.opts.waitForPeer === "undefined")
+      this.opts.waitForPeer = true;
 
     this.heartbeatTimer = setInterval(
       () => this.heartbeatCheck(),
@@ -117,7 +118,7 @@ export default class Translink {
             if (this.opts.log) this.log("=> announced");
 
             const interval = setInterval(() => {
-              if (this.nodes.size > 0 || !this.opts.waitForPeer) {
+              if (this.nodes.size > 0 || this.opts.waitForPeer === false) {
                 this.log("=> connected");
                 clearInterval(interval);
                 resolve(true);

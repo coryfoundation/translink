@@ -86,7 +86,7 @@ var Translink = /** @class */ (function () {
         this.respondEmitter = new events_1["default"]();
         this.nodes = new Map();
         this.packer = msgpack5_1["default"]();
-        this.opts = opts;
+        this.opts = Object.assign({}, opts);
         this.nodeID =
             (_a = this.opts.nodeID) !== null && _a !== void 0 ? _a : Date.now().toString(36) + Math.random().toString(36).substring(2, 5);
         if (!this.opts.namespace)
@@ -115,7 +115,7 @@ var Translink = /** @class */ (function () {
             this.opts.broadcastReqConcurrency = 5;
         if (!this.opts.broadcastReqTimeout)
             this.opts.broadcastReqTimeout = 1000;
-        if (!this.opts.waitForPeer)
+        if (typeof this.opts.waitForPeer === "undefined")
             this.opts.waitForPeer = true;
         this.heartbeatTimer = setInterval(function () { return _this.heartbeatCheck(); }, this.opts.heartbeatInterval);
     }
@@ -143,7 +143,7 @@ var Translink = /** @class */ (function () {
                                 if (_this.opts.log)
                                     _this.log("=> announced");
                                 var interval = setInterval(function () {
-                                    if (_this.nodes.size > 0 || !_this.opts.waitForPeer) {
+                                    if (_this.nodes.size > 0 || _this.opts.waitForPeer === false) {
                                         _this.log("=> connected");
                                         clearInterval(interval);
                                         resolve(true);
